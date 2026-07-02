@@ -1,7 +1,16 @@
 # BATTLE FOR THE COOKIE — Guide projet
 
-> Jeu navigateur : battle royale 2D top-down + déduction visuelle. Un fichier HTML autonome (Phaser 3.60 via cdnjs, zéro build). Fichier jouable de référence : `battle-for-the-cookie-jalon7.html` (copié en `index.html` pour le déploiement statique Vercel).
+> Jeu navigateur : battle royale + déduction visuelle. Zéro build, zéro asset : des fichiers HTML autonomes servis statiquement (Vercel).
 > Brief complet : `BATTLE-FOR-THE-COOKIE-brief-final.md`. Sections clés reprises ci-dessous.
+
+## Structure du repo
+
+- `index.html` — page d'accueil statique : choix du mode 2D ou 3D (zéro JS).
+- `2d.html` — **le jeu complet 2D** (Jalon 7, Phaser 3.60 via cdnjs, ~2150 lignes). C'est le fichier de référence du gameplay : toute modification 3D doit rester fidèle à sa logique. `battle-for-the-cookie-jalon7.html` en est la copie d'origine figée.
+- `3d.html` — **prototype FPS 3D** (Jalon 3D-1, Three.js 0.170 en ES module via cdnjs, autonome). Portage du cœur de déduction sur un plan x/z en mètres (monde 140 m ≈ 2200 px). Périmètre : foule 120 PNJ blocky + FPS (sprint/saut/slide, `event.code` pour AZERTY) + tir raycast + 4 manches d'indices + scoring identique au 2D + transfert de coupable + accusation canalisée 5 s (remplace le fouet dans ce jalon). PAS de bots, zone, loot ni sang. Duplication de logique assumée : le refactor en modules partagés (§7.1) viendra si le 3D est validé.
+- Tests : e2e Playwright headless (partie 3D complète pilotée via les hooks `window.__G` / `window.__player` exposés en fin de `3d.html`). Test local : `python3 -m http.server` obligatoire pour le 3D (module ES, pas de `file://`).
+
+Les sections 4-8 ci-dessous décrivent le jeu 2D de référence.
 
 ## 4. Mécaniques (toutes implémentées et playtestées)
 

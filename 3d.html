@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battle for the Cookie — 3D FPS (prototype)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; background: #bfd7e8; height: 100%; }
+  canvas { display: block; }
+
+  /* ---------- HUD (DOM par-dessus le canvas) ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none;
+         font-family: 'Arial Black', Arial, sans-serif; color: #fff; display: none; }
+  .panel { background: rgba(44,58,30,.78); border-radius: 10px; padding: 10px 14px; }
+
+  #banner { position: absolute; top: -120px; left: 50%; transform: translateX(-50%);
+            text-align: center; transition: top .35s cubic-bezier(.34,1.4,.64,1); min-width: 340px; }
+  #banner .t { color: #ffe08a; font-size: 24px; letter-spacing: 1px; }
+  #banner .s { font-family: Arial, sans-serif; font-size: 15px; margin-top: 4px; color: #eef3e2; }
+  #banner.show { top: 46px; }
+
+  #scoreBox { position: absolute; top: 14px; left: 14px; }
+  #scoreBox .score { color: #ffe08a; font-size: 22px; }
+  #scoreBox .malus { font-family: Arial, sans-serif; font-size: 13px; color: #ffb3a0; margin-top: 2px; }
+
+  #roundBox { position: absolute; top: 14px; right: 14px; text-align: right; }
+  #roundBox .round { color: #ffe08a; font-size: 18px; }
+  #roundBox .timer { font-size: 24px; }
+  #roundBox .timer.final { color: #ff6a55; }
+
+  #cluesBox { position: absolute; top: 110px; left: 14px; max-width: 300px; }
+  #cluesBox .h { color: #ffe08a; font-size: 15px; margin-bottom: 6px; }
+  #cluesBox li { font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5;
+                 list-style: none; color: #eef3e2; }
+
+  #npcBox { position: absolute; bottom: 14px; right: 14px; font-family: Arial, sans-serif;
+            font-size: 13px; text-align: right; color: #dfe8cc; }
+  #npcBox b { color: #ffe08a; }
+
+  /* Crosshair */
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 22px; height: 22px;
+               transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,.92); }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%);
+                       clip-path: polygon(0 0, 100% 0, 100% 32%, 0 32%, 0 68%, 100% 68%, 100% 100%, 0 100%); }
+  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%);
+                       clip-path: polygon(0 0, 32% 0, 32% 100%, 0 100%, 68% 0, 100% 0, 100% 100%, 68% 100%); }
+
+  #accusePrompt { position: absolute; top: 56%; left: 50%; transform: translateX(-50%);
+                  color: #ffe08a; font-size: 16px; text-shadow: 2px 2px 0 rgba(0,0,0,.5); display: none; }
+  #tieBar { position: absolute; top: 62%; left: 50%; transform: translateX(-50%); width: 260px; height: 16px;
+            background: rgba(0,0,0,.55); border: 2px solid #ffe08a; border-radius: 8px; display: none; }
+  #tieBar > div { height: 100%; width: 0%; background: #ffe08a; border-radius: 5px; }
+  #tieBar .lbl { position: absolute; top: -22px; width: 100%; text-align: center; color: #ffe08a; font-size: 13px; }
+
+  /* Textes de score flottants */
+  .float { position: absolute; font-size: 18px; text-shadow: 2px 2px 0 rgba(0,0,0,.5);
+           animation: floatUp .9s ease-out forwards; transform: translate(-50%,-50%); }
+  .float.good { color: #7dd94a; } .float.bad { color: #ff6a55; }
+  @keyframes floatUp { to { translate: 0 -60px; opacity: 0; } }
+
+  /* Vignette d'erreur */
+  #hitFlash { position: absolute; inset: 0; background: radial-gradient(ellipse at center,
+              transparent 55%, rgba(224,74,58,.45) 100%); opacity: 0; transition: opacity .1s; }
+
+  /* ---------- Écrans ---------- */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 18px; text-align: center; background: rgba(44,58,30,.92);
+            font-family: 'Arial Black', Arial, sans-serif; color: #fff; z-index: 10; padding: 20px; }
+  .screen h1 { color: #ffe08a; font-size: clamp(26px, 5vw, 44px); text-shadow: 3px 3px 0 rgba(0,0,0,.35); }
+  .screen p  { font-family: Arial, sans-serif; max-width: 560px; line-height: 1.55; color: #eef3e2; }
+  .screen .controls { font-family: Arial, sans-serif; font-size: 14px; color: #cfe0b0; line-height: 1.7; }
+  .screen .btn { font-family: 'Arial Black', Arial, sans-serif; font-size: 20px; color: #2c3a1e;
+                 background: #ffe08a; border: none; border-radius: 10px; padding: 14px 30px;
+                 cursor: pointer; animation: pulse 1.2s infinite; }
+  .screen a.home { font-family: Arial, sans-serif; color: #cfe0b0; font-size: 13px; }
+  @keyframes pulse { 50% { transform: scale(1.06); } }
+  .cookie { width: 90px; height: 90px; border-radius: 50%; background: #c98f4e;
+            border: 5px solid #a9713a; position: relative; }
+  .cookie i { position: absolute; border-radius: 50%; background: #5c3a1e; width: 13px; height: 13px; }
+  .cookie i:nth-child(1) { top: 16px; left: 22px; } .cookie i:nth-child(2) { top: 40px; left: 50px; width: 16px; height: 16px; }
+  .cookie i:nth-child(3) { top: 58px; left: 20px; } .cookie i:nth-child(4) { top: 20px; left: 56px; width: 10px; height: 10px; }
+  #endScreen { display: none; }
+  #endScreen .stats { color: #ffe08a; font-size: 20px; }
+  #pauseOverlay { display: none; cursor: pointer; background: rgba(44,58,30,.7); }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="banner" class="panel"><div class="t"></div><div class="s"></div></div>
+  <div id="scoreBox" class="panel"><div class="score">SCORE 0</div><div class="malus">Erreur de tir : −10</div></div>
+  <div id="roundBox" class="panel"><div class="round">MANCHE 1/4</div><div class="timer">0:30</div></div>
+  <div id="cluesBox" class="panel"><div class="h">INDICES</div><ul id="cluesList"><li style="color:#9fb086">Aucun indice pour l'instant…</li></ul></div>
+  <div id="npcBox" class="panel"><b id="cAlive">120</b> passants • <b id="cExcl">0</b> exclus restants • <b id="cSusp">120</b> suspects</div>
+  <div id="crosshair"></div>
+  <div id="accusePrompt">Maintenir <b>E</b> — ACCUSER</div>
+  <div id="tieBar"><div></div><span class="lbl">ACCUSATION EN COURS…</span></div>
+  <div id="hitFlash"></div>
+</div>
+
+<div id="titleScreen" class="screen">
+  <div class="cookie"><i></i><i></i><i></i><i></i></div>
+  <h1>BATTLE FOR THE COOKIE — 3D</h1>
+  <p>Un voleur de cookie se cache parmi <b>120 passants</b>. À chaque manche, un indice élimine des suspects.
+     Purge les innocentés (<b style="color:#7dd94a">+10</b>), épargne les suspects (malus croissant !) et, en phase finale,
+     <b>accuse le coupable</b> — de près, sans bouger, pendant 5 secondes.</p>
+  <div class="controls">
+    ZQSD / WASD — se déplacer &nbsp;•&nbsp; Souris — viser / tirer<br>
+    Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; E — accuser (finale)<br>
+    Échap — pause &nbsp;•&nbsp; <i>Desktop uniquement</i>
+  </div>
+  <button class="btn" id="startBtn">CLIQUE POUR JOUER</button>
+  <a class="home" href="index.html">← retour à l'accueil</a>
+</div>
+
+<div id="pauseOverlay" class="screen">
+  <h1>PAUSE</h1>
+  <p>Clique pour reprendre la traque.</p>
+</div>
+
+<div id="endScreen" class="screen">
+  <h1 id="endTitle">VICTOIRE !</h1>
+  <p id="endText"></p>
+  <div class="stats" id="endStats"></div>
+  <button class="btn" id="replayBtn">REJOUER</button>
+  <a class="home" href="index.html">← retour à l'accueil</a>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.170.0/three.module.min.js';
+
+// ============================================================
+// BATTLE FOR THE COOKIE — MODE 3D FPS (prototype, Jalon 3D-1)
+// Portage du cœur de déduction du jeu 2D (2d.html) sur un plan
+// x/z en mètres. Pas de bots, zone, loot ni fouet dans ce jalon.
+// Fichier autonome : Three.js via CDN, zéro build, zéro asset.
+// ============================================================
+
+// ---------- S1. CONSTANTES ----------
+// Logique de jeu — copiées du 2D (2d.html L30-98), valeurs identiques
+const NPC_COUNT = 120;
+const NPC_HP = 20;
+const CLUE_INTERVAL = 30000;
+const MAX_ROUNDS = 4;
+const SCORE_GOOD = 10;
+const MALUS_TABLE = [-10, -10, -15, -20, -25];
+const SCORE_CULPRIT = 500;
+const SCORE_WRONG_TIE = -100;
+const SCORE_COOKIE_LOST = -500;
+
+const HAIR_COLORS = { roux: 0xc96f3b, blond: 0xe8c86e, noir: 0x2e2620 };
+const HAIR_LENGTHS = ['long', 'court'];
+const HATS = ['chapeau', 'rien'];
+const TOP_COLORS = { rouge: 0xc75b4a, bleu: 0x5b7fb5, vert: 0x6a9a5b };
+const SKIN = 0xf6d7b0;
+
+const CLUE_TEXTS = {
+  hair:  (v) => `Le coupable n'a pas les cheveux ${v} !`,
+  len:   (v) => `Le coupable n'a pas les cheveux ${v}s !`,
+  hat:   (v) => v === 'chapeau' ? `Le coupable ne porte pas de chapeau !` : `Le coupable porte un chapeau !`,
+  top:   (v) => `Le coupable ne porte pas de haut ${v} !`
+};
+
+// Monde 3D — 140 m de côté ≈ même densité de foule que les 2200 px du 2D
+const WORLD = 140;
+const HALF = WORLD / 2 - 2;        // clamp des positions
+const SPAWN_CLEAR_R = 14;          // pas de spawn PNJ au centre (220 px du 2D)
+
+// Joueur FPS — « Krunker nerveux mais vitesse modérée »
+const WALK_SPEED = 5.2;
+const SPRINT_SPEED = 7.6;
+const ACCEL = 12;                  // lissage 1-exp(-ACCEL*dt)
+const JUMP_V = 5.0;
+const GRAVITY = 15;                // > 9.81 : retombée sèche
+const SLIDE_SPEED = 8.8;
+const SLIDE_TIME = 0.7;            // s, décroît vers WALK_SPEED
+const SLIDE_CD = 1000;             // ms
+const EYE = 1.62;
+const EYE_SLIDE = 0.95;
+const SENS = 0.0022;               // rad / px souris
+const PLAYER_R = 0.35;             // rayon de collision
+
+// Tir — raycast hitscan (pas de pool de balles : piège n°1 du brief éliminé)
+const FIRE_CD = 350;
+const GUN_DMG = 12;                // 2 balles par PNJ, comme en 2D
+const SCARE_RADIUS = 11;           // 170 px / 2200 ≈ ratio conservé
+const SOUND_RANGE = 60;            // atténuation distance (900 px du 2D)
+
+// Capture — accusation canalisée (remplace le fouet dans ce jalon)
+const ACCUSE_RANGE = 12;
+const ACCUSE_TIME = 5000;          // 5 s immobile, E maintenu
+const ACCUSE_CD = 3000;            // après une mauvaise accusation
+const FINAL_TIME = 60000;          // timer de la phase finale
+
+// PNJ
+const NPC_WALK_MIN = 1.1, NPC_WALK_MAX = 1.7;   // m/s errance
+const NPC_FLEE_MIN = 4.2, NPC_FLEE_MAX = 5.4;   // m/s panique
+
+// ---------- S2. ÉTAT DU JEU ----------
+const G = {
+  started: false, locked: false, gameOver: false,
+  now: 0,                       // horloge de jeu en ms (gelée en pause)
+  score: 0, kills: 0,
+  npcs: [], npcAlive: NPC_COUNT,
+  culpritAttrs: null, cluePool: [], revealedClues: [],
+  nextClueAt: CLUE_INTERVAL, finalPhase: false, finalEndAt: 0,
+  tying: null,                  // { npc, start }
+  accuseCdUntil: 0, eHeld: false,
+  nextFireAt: 0, mouseHeld: false,
+  sfxCtx: null
+};
+
+// ---------- S3. AUDIO (port de 2d.html L1528-1588, Web Audio pur) ----------
+function getAudioCtx() {
+  if (!G.sfxCtx) {
+    try { G.sfxCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { return null; }
+  }
+  if (G.sfxCtx.state === 'suspended') G.sfxCtx.resume();
+  return G.sfxCtx;
+}
+function tone(freqA, freqB, dur, type, vol) {
+  const ctx = getAudioCtx(); if (!ctx || vol <= 0.005) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freqA, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(1, freqB), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol, cutoff) {
+  const ctx = getAudioCtx(); if (!ctx || vol <= 0.005) return;
+  const len = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+  const g = ctx.createGain(); g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.start(ctx.currentTime);
+}
+function volAt(x, z) {
+  const d = Math.hypot(player.x - x, player.z - z);
+  return Math.min(1, Math.max(0, 1 - d / SOUND_RANGE));
+}
+function sfx(name, vol = 1) {
+  switch (name) {
+    case 'pistol': tone(240, 70, 0.09, 'square', 0.12 * vol); break;
+    case 'pop':    tone(320, 90, 0.12, 'sine', 0.18 * vol); break;
+    case 'clue':   [523, 659, 784].forEach((f, i) => setTimeout(() => tone(f, f, 0.14, 'triangle', 0.16 * vol), i * 110)); break;
+    case 'wrong':  tone(220, 80, 0.35, 'sawtooth', 0.18 * vol); break;
+    case 'whip':   noise(0.09, 0.20 * vol, 3500); break;
+    case 'win':    [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, f, 0.18, 'triangle', 0.20 * vol), i * 130)); break;
+    case 'lose':   [392, 311, 233].forEach((f, i) => setTimeout(() => tone(f, f, 0.25, 'triangle', 0.20 * vol), i * 160)); break;
+  }
+}
+
+// ---------- S4. SCÈNE ----------
+const SKY = 0xbfd7e8;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(SKY, 70, 200);   // profondeur sans gêner la lecture (<50 m)
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 250);
+camera.rotation.order = 'YXZ';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x6f8a4f, 1.0));
+const sun = new THREE.DirectionalLight(0xfff2d0, 1.4);
+sun.position.set(1, 2, 0.8);
+scene.add(sun);
+
+// PRNG déterministe — même graine que le pattern du 2D : décor identique à chaque partie
+let seed = 987654321;
+function rnd() { seed = seed * 16807 % 2147483647; return seed / 2147483647; }
+
+// Sol : CanvasTexture procédurale herbe, grain pixelisé
+function makeGroundTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8ba05e'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = rnd() < 0.5 ? '#7e945a' : '#96aa66';
+    g.fillRect(Math.floor(rnd() * 512), Math.floor(rnd() * 512), 3, 3);
+  }
+  for (let i = 0; i < 40; i++) {   // fleurs
+    g.fillStyle = rnd() < 0.5 ? '#e8e3d0' : '#e8c86e';
+    g.fillRect(Math.floor(rnd() * 512), Math.floor(rnd() * 512), 4, 4);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(8, 8);
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD, WORLD),
+  new THREE.MeshLambertMaterial({ map: makeGroundTexture() })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// Place « cookie » centrale : repère d'orientation
+const plaza = new THREE.Mesh(
+  new THREE.CylinderGeometry(9, 9, 0.1, 28),
+  new THREE.MeshLambertMaterial({ color: 0xc98f4e })
+);
+plaza.position.y = 0.05;
+scene.add(plaza);
+for (let i = 0; i < 10; i++) {   // pépites
+  const chip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5 + rnd() * 0.4, 0.5 + rnd() * 0.4, 0.14, 10),
+    new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
+  );
+  const a = rnd() * Math.PI * 2, r = rnd() * 7;
+  chip.position.set(Math.cos(a) * r, 0.11, Math.sin(a) * r);
+  scene.add(chip);
+}
+
+// Décor blocky : caisses + buissons, déterministes, avec AABB (collision + cover)
+const obstacles = [];        // { minX, maxX, minZ, maxZ }
+const obstacleMeshes = [];
+const GEO_BOX = new THREE.BoxGeometry(1, 1, 1);
+function addObstacle(x, z, w, h, d, hex) {
+  const m = new THREE.Mesh(GEO_BOX, new THREE.MeshLambertMaterial({ color: hex }));
+  m.scale.set(w, h, d);
+  m.position.set(x, h / 2, z);
+  scene.add(m);
+  obstacleMeshes.push(m);
+  obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+}
+function decorSpot() {
+  let x, z;
+  do { x = (rnd() * 2 - 1) * (HALF - 4); z = (rnd() * 2 - 1) * (HALF - 4); }
+  while (Math.hypot(x, z) < 12);
+  return [x, z];
+}
+for (let i = 0; i < 22; i++) {
+  const [x, z] = decorSpot();
+  const shade = 0x8a6a44 + Math.floor(rnd() * 3) * 0x060402;
+  addObstacle(x, z, 1.2, 1.2, 1.2, shade);
+  if (rnd() < 0.3) {   // pile de 2
+    const top = new THREE.Mesh(GEO_BOX, new THREE.MeshLambertMaterial({ color: 0x9a744c }));
+    top.scale.set(1.1, 1.1, 1.1);
+    top.position.set(x, 1.2 + 0.55, z);
+    scene.add(top);
+    obstacleMeshes.push(top);
+  }
+}
+for (let i = 0; i < 14; i++) {
+  const [x, z] = decorSpot();
+  addObstacle(x, z, 1.4, 1.0, 1.4, 0x51683c);
+}
+
+// ---------- S5. FABRIQUE DE PERSONNAGES BLOCKY ----------
+// Géométrie unitaire partagée + cache de matériaux : ~15 matériaux au total.
+const matCache = new Map();
+function getMat(hex) {
+  if (!matCache.has(hex)) matCache.set(hex, new THREE.MeshLambertMaterial({ color: hex }));
+  return matCache.get(hex);
+}
+const grayCache = new Map();
+function getGrayMat(hex) {   // teinte cadavre : attributs encore lisibles (info de déduction)
+  if (!grayCache.has(hex)) {
+    const c = new THREE.Color(hex).lerp(new THREE.Color(0xbbb3a8), 0.55);
+    grayCache.set(hex, new THREE.MeshLambertMaterial({ color: c }));
+  }
+  return grayCache.get(hex);
+}
+const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const hitboxMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+
+function block(group, meshes, w, h, d, hex, x, y, z) {
+  const m = new THREE.Mesh(GEO_BOX, getMat(hex));
+  m.scale.set(w, h, d);
+  m.position.set(x, y, z);
+  m.userData.hex = hex;
+  group.add(m);
+  meshes.push(m);
+  return m;
+}
+
+// Attributs surdimensionnés : >50 % de la silhouette porte l'info de déduction.
+// Le personnage regarde vers +Z local.
+function buildCharacter(attrs) {
+  const group = new THREE.Group();
+  const meshes = [];
+  const hairHex = HAIR_COLORS[attrs.hair];
+
+  block(group, meshes, 0.5, 0.6, 0.3, 0x57493a, 0, 0.3, 0);                    // jambes
+  block(group, meshes, 0.66, 0.68, 0.38, TOP_COLORS[attrs.top], 0, 0.94, 0);   // torse = axe « haut »
+  block(group, meshes, 0.5, 0.5, 0.5, SKIN, 0, 1.53, 0);                       // tête
+  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, -0.11, 1.58, 0.26);          // yeux
+  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, 0.11, 1.58, 0.26);
+  block(group, meshes, 0.58, 0.2, 0.58, hairHex, 0, 1.88, 0);                  // calotte cheveux = axe « couleur »
+
+  if (attrs.len === 'long') {   // axe « longueur » : dos + panneaux latéraux (lisible de face)
+    block(group, meshes, 0.5, 0.75, 0.15, hairHex, 0, 1.4, -0.32);
+    block(group, meshes, 0.12, 0.5, 0.54, hairHex, -0.31, 1.53, 0);
+    block(group, meshes, 0.12, 0.5, 0.54, hairHex, 0.31, 1.53, 0);
+  }
+  if (attrs.hat === 'chapeau') {   // axe « chapeau » : bord surdimensionné, cheveux visibles dessous
+    block(group, meshes, 0.8, 0.07, 0.8, 0x8a6a44, 0, 2.02, 0);
+    block(group, meshes, 0.46, 0.3, 0.46, 0x8a6a44, 0, 2.2, 0);
+  }
+
+  // Hitbox invisible pour le raycast de tir
+  const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
+  hitbox.scale.set(0.75, 2.1, 0.55);
+  hitbox.position.y = 1.05;
+  group.add(hitbox);
+
+  return { group, meshes, hitbox };
+}
+
+// ---------- S6. LOGIQUE DE DÉDUCTION (port de 2d.html L318-325, 514-549, 734-837) ----------
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function spawnNpc() {
+  const attrs = {
+    hair: pick(Object.keys(HAIR_COLORS)),
+    len: pick(HAIR_LENGTHS),
+    hat: pick(HATS),
+    top: pick(Object.keys(TOP_COLORS))
+  };
+  let x, z, tries = 0;
+  do {
+    x = (Math.random() * 2 - 1) * (HALF - 2);
+    z = (Math.random() * 2 - 1) * (HALF - 2);
+    tries++;
+  } while (Math.hypot(x, z) < SPAWN_CLEAR_R && tries < 20);
+
+  const { group, meshes, hitbox } = buildCharacter(attrs);
+  group.position.set(x, 0, z);
+  scene.add(group);
+
+  const npc = {
+    attrs, hp: NPC_HP, isCulprit: false, dead: false,
+    x, z, vx: 0, vz: 0, nextThink: 0, walkPhase: Math.random() * 10,
+    group, meshes, hitbox, flashUntil: 0
+  };
+  hitbox.userData.npc = npc;
+  return npc;
+}
+
+function isExcluded(npc) {
+  return G.revealedClues.some(c => npc.attrs[c.axis] === c.value);
+}
+function currentMalus() {
+  const i = Math.min(G.revealedClues.length, MALUS_TABLE.length - 1);
+  return MALUS_TABLE[i];
+}
+function initCluePool() {
+  G.cluePool = [];
+  for (const v of Object.keys(HAIR_COLORS)) if (v !== G.culpritAttrs.hair) G.cluePool.push({ axis: 'hair', value: v });
+  for (const v of HAIR_LENGTHS) if (v !== G.culpritAttrs.len) G.cluePool.push({ axis: 'len', value: v });
+  for (const v of HATS) if (v !== G.culpritAttrs.hat) G.cluePool.push({ axis: 'hat', value: v });
+  for (const v of Object.keys(TOP_COLORS)) if (v !== G.culpritAttrs.top) G.cluePool.push({ axis: 'top', value: v });
+  shuffle(G.cluePool);
+  G.cluePool = G.cluePool.slice(0, MAX_ROUNDS);   // 4 indices sur les 6 possibles
+  G.revealedClues = [];
+}
+// Recalcule les indices restants pour le NOUVEAU coupable, en gardant valides
+// les indices déjà révélés (l'héritier n'est pas exclu par eux).
+function rebuildCluePool() {
+  const remaining = Math.max(0, MAX_ROUNDS - G.revealedClues.length);
+  const revealed = new Set(G.revealedClues.map(c => c.axis + ':' + c.value));
+  const pool = [];
+  for (const v of Object.keys(HAIR_COLORS)) if (v !== G.culpritAttrs.hair && !revealed.has('hair:' + v)) pool.push({ axis: 'hair', value: v });
+  for (const v of HAIR_LENGTHS) if (v !== G.culpritAttrs.len && !revealed.has('len:' + v)) pool.push({ axis: 'len', value: v });
+  for (const v of HATS) if (v !== G.culpritAttrs.hat && !revealed.has('hat:' + v)) pool.push({ axis: 'hat', value: v });
+  for (const v of Object.keys(TOP_COLORS)) if (v !== G.culpritAttrs.top && !revealed.has('top:' + v)) pool.push({ axis: 'top', value: v });
+  shuffle(pool);
+  G.cluePool = pool.slice(0, remaining);
+}
+
+function startRound() {
+  if (G.cluePool.length === 0) return;
+  const clue = G.cluePool.pop();
+  G.revealedClues.push(clue);
+  sfx('clue');
+  showBanner('NOUVEL INDICE !', CLUE_TEXTS[clue.axis](clue.value), 5000);
+  refreshCluesList();
+  updateHud();
+
+  if (G.cluePool.length === 0) {   // dernier indice → phase finale
+    G.finalPhase = true;
+    G.finalEndAt = G.now + FINAL_TIME;
+    setTimeout(() => {
+      if (!G.gameOver) showBanner('PHASE FINALE !',
+        `Trouve le coupable et ACCUSE-LE : vise-le à moins de ${ACCUSE_RANGE} m et maintiens E, immobile, 5 s !`, 7000);
+    }, 5600);
+  } else {
+    G.nextClueAt = G.now + CLUE_INTERVAL;
+  }
+}
+
+// Mort du coupable par balle → transfert du rôle (port de 2d.html L734-787)
+function culpritDown(npc) {
+  G.score += SCORE_WRONG_TIE;
+  floatScore(npc, SCORE_WRONG_TIE);
+  errorFlash();
+  sfx('wrong');
+  npc.isCulprit = false;
+  killNpcVisual(npc);
+
+  const candidates = G.npcs.filter(n => !n.dead && n !== npc && !isExcluded(n));
+  if (candidates.length === 0) {
+    // Le dernier suspect vient d'être abattu : le cookie est perdu à jamais.
+    G.score += SCORE_COOKIE_LOST;
+    endGame(false, 'COOKIE PERDU À JAMAIS…',
+      'Le dernier suspect est mort. Le mystère est détruit, et le cookie avec lui.');
+    return;
+  }
+  const heir = candidates[Math.floor(Math.random() * candidates.length)];
+  heir.isCulprit = true;
+  G.culpritAttrs = heir.attrs;
+  rebuildCluePool();
+  showBanner('LE COUPABLE EST TOMBÉ !', 'Un complice a récupéré le cookie... la traque continue !', 4000);
+  updateHud();
+}
+
+// ---------- S7. CONTRÔLES FPS ----------
+const player = {
+  x: 0, y: 0, z: 0,            // y = hauteur des PIEDS
+  vx: 0, vy: 0, vz: 0,
+  yaw: 0, pitch: 0,
+  grounded: true,
+  sliding: false, slideUntil: 0, slideCdUntil: 0, slideDirX: 0, slideDirZ: 0,
+  eyeH: EYE, recoil: 0, bobPhase: 0
+};
+{
+  const a = Math.random() * Math.PI * 2;
+  player.x = Math.cos(a) * 45;
+  player.z = Math.sin(a) * 45;
+  player.yaw = Math.atan2(-player.x, -player.z);   // face au centre
+}
+
+const keys = {};
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') e.preventDefault();
+  keys[e.code] = true;
+  if (e.code === 'KeyE' && !e.repeat) { G.eHeld = true; tryStartAccuse(); }
+});
+addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  if (e.code === 'KeyE') { G.eHeld = false; cancelTie(); }
+});
+// e.code = position PHYSIQUE des touches : KeyW/A/S/D couvre AZERTY (ZQSD) et QWERTY
+function moveInput() {
+  let f = 0, s = 0;
+  if (keys.KeyW || keys.ArrowUp) f += 1;
+  if (keys.KeyS || keys.ArrowDown) f -= 1;
+  if (keys.KeyA || keys.ArrowLeft) s -= 1;
+  if (keys.KeyD || keys.ArrowRight) s += 1;
+  return { f, s };
+}
+
+addEventListener('mousemove', (e) => {
+  if (!G.locked) return;
+  player.yaw -= e.movementX * SENS;
+  player.pitch -= e.movementY * SENS;
+  player.pitch = Math.max(-1.48, Math.min(1.48, player.pitch));
+});
+addEventListener('mousedown', (e) => { if (e.button === 0 && G.locked) G.mouseHeld = true; });
+addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseHeld = false; });
+
+function collidePlayer() {
+  for (const o of obstacles) {
+    const nx = Math.max(o.minX, Math.min(player.x, o.maxX));
+    const nz = Math.max(o.minZ, Math.min(player.z, o.maxZ));
+    const dx = player.x - nx, dz = player.z - nz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < PLAYER_R * PLAYER_R) {
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        player.x = nx + (dx / d) * PLAYER_R;
+        player.z = nz + (dz / d) * PLAYER_R;
+      } else {
+        player.x = o.maxX + PLAYER_R;   // coincé pile dedans : pushout arbitraire
+      }
+    }
+  }
+  player.x = Math.max(-HALF, Math.min(HALF, player.x));
+  player.z = Math.max(-HALF, Math.min(HALF, player.z));
+}
+
+function updatePlayer(dt) {
+  const { f, s } = moveInput();
+  const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
+  // avant = -Z tourné par yaw
+  let dirX = (-sin * f) + (cos * s);
+  let dirZ = (-cos * f) + (-sin * s);
+  const len = Math.hypot(dirX, dirZ);
+  if (len > 0) { dirX /= len; dirZ /= len; }
+
+  const wantSprint = (keys.ShiftLeft || keys.ShiftRight) && f > 0;
+
+  // Glissade : C/Ctrl en sprint au sol, direction verrouillée
+  if ((keys.KeyC || keys.ControlLeft) && wantSprint && player.grounded &&
+      !player.sliding && G.now >= player.slideCdUntil && len > 0) {
+    player.sliding = true;
+    player.slideUntil = G.now + SLIDE_TIME * 1000;
+    player.slideDirX = dirX; player.slideDirZ = dirZ;
+    sfx('whip', 0.5);
+  }
+  if (player.sliding && (G.now >= player.slideUntil || !player.grounded)) {
+    player.sliding = false;
+    player.slideCdUntil = G.now + SLIDE_CD;
+  }
+
+  let targetVX, targetVZ;
+  if (player.sliding) {
+    const t = 1 - (player.slideUntil - G.now) / (SLIDE_TIME * 1000);
+    const sp = SLIDE_SPEED + (WALK_SPEED - SLIDE_SPEED) * t;
+    targetVX = player.slideDirX * sp;
+    targetVZ = player.slideDirZ * sp;
+  } else {
+    const sp = wantSprint ? SPRINT_SPEED : WALK_SPEED;
+    targetVX = dirX * sp;
+    targetVZ = dirZ * sp;
+  }
+
+  if (player.grounded) {
+    const k = 1 - Math.exp(-ACCEL * dt);
+    player.vx += (targetVX - player.vx) * k;
+    player.vz += (targetVZ - player.vz) * k;
+    if (keys.Space && !player.sliding) {
+      player.vy = JUMP_V;
+      player.grounded = false;
+    }
+  }
+  // en l'air : pas de nouvelle accélération (pas de bunny-hop)
+
+  if (!player.grounded) {
+    player.vy -= GRAVITY * dt;
+  }
+  player.x += player.vx * dt;
+  player.z += player.vz * dt;
+  player.y += player.vy * dt;
+  if (player.y <= 0) { player.y = 0; player.vy = 0; player.grounded = true; }
+
+  collidePlayer();
+
+  // Caméra : hauteur d'yeux (slide baisse), headbob, recul
+  const targetEye = player.sliding ? EYE_SLIDE : EYE;
+  player.eyeH += (targetEye - player.eyeH) * Math.min(1, 10 * dt);
+  const speed = Math.hypot(player.vx, player.vz);
+  let bob = 0;
+  if (player.grounded && !player.sliding && speed > 0.5) {
+    player.bobPhase += dt * speed * 1.9;
+    bob = Math.sin(player.bobPhase) * 0.035;
+  }
+  player.recoil *= Math.exp(-11 * dt);
+
+  camera.position.set(player.x, player.y + player.eyeH + bob, player.z);
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch + player.recoil;
+}
+
+// ---------- S8. TIR, VIEWMODEL, ACCUSATION ----------
+const raycaster = new THREE.Raycaster();
+const CENTER_SCREEN = new THREE.Vector2(0, 0);
+let shootTargets = [];   // hitboxes vivantes + décor + sol
+function rebuildTargets() {
+  shootTargets = [ground, ...obstacleMeshes];
+  for (const n of G.npcs) if (!n.dead) shootTargets.push(n.hitbox);
+}
+function raycastCenter() {
+  raycaster.setFromCamera(CENTER_SCREEN, camera);
+  const hits = raycaster.intersectObjects(shootTargets, false);
+  return hits.length ? hits[0] : null;
+}
+
+// Viewmodel : pistolet blocky enfant de la caméra
+const viewmodel = new THREE.Group();
+{
+  const slide = new THREE.Mesh(GEO_BOX, getMat(0x4a4239));
+  slide.scale.set(0.07, 0.07, 0.26); slide.position.set(0, 0.02, -0.1);
+  const grip = new THREE.Mesh(GEO_BOX, getMat(0x57493a));
+  grip.scale.set(0.06, 0.12, 0.08); grip.position.set(0, -0.07, 0);
+  const arm = new THREE.Mesh(GEO_BOX, getMat(SKIN));
+  arm.scale.set(0.08, 0.08, 0.22); arm.position.set(0.01, -0.12, 0.14);
+  viewmodel.add(slide, grip, arm);
+  viewmodel.scale.set(0.6, 0.6, 0.6);
+  viewmodel.position.set(0.3, -0.26, -0.55);
+  camera.add(viewmodel);
+}
+scene.add(camera);
+let vmKick = 0;
+
+// Tracers : le « juice » du projectile sans la physique
+const tracers = [];
+const tracerMat = new THREE.MeshBasicMaterial({
+  color: 0xffe9a8, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+function spawnTracer(from, to) {
+  const m = new THREE.Mesh(GEO_BOX, tracerMat.clone());
+  const mid = from.clone().add(to).multiplyScalar(0.5);
+  m.position.copy(mid);
+  m.lookAt(to);
+  m.scale.set(0.02, 0.02, from.distanceTo(to));
+  scene.add(m);
+  tracers.push({ mesh: m, born: performance.now() });
+}
+function updateTracers() {
+  const now = performance.now();
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    const t = tracers[i];
+    const age = now - t.born;
+    if (age > 90) {
+      scene.remove(t.mesh);
+      t.mesh.material.dispose();
+      tracers.splice(i, 1);
+    } else {
+      t.mesh.material.opacity = 0.9 * (1 - age / 90);
+    }
+  }
+}
+
+function shoot() {
+  if (G.now < G.nextFireAt || G.tying) return;
+  G.nextFireAt = G.now + FIRE_CD;
+  sfx('pistol');
+  player.recoil += 0.016;
+  vmKick = 1;
+
+  const hit = raycastCenter();
+  const from = new THREE.Vector3(0.26, -0.18, -0.5).applyMatrix4(camera.matrixWorld);
+  let to;
+  if (hit) to = hit.point;
+  else {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    to = camera.position.clone().add(dir.multiplyScalar(120));
+  }
+  spawnTracer(from, to);
+
+  // Tirer disperse la foule — au départ ET à l'arrivée (mécanique clé du 2D)
+  scareNpcs(player.x, player.z);
+  scareNpcs(to.x, to.z);
+
+  const npc = hit && hit.object.userData.npc;
+  if (npc && !npc.dead) hitNpc(npc);
+}
+
+// Scoring identique au 2D (2d.html L1347-1394) : exclu +10, suspect −malus, coupable → transfert
+function hitNpc(npc) {
+  if (G.gameOver) return;
+  npc.hp -= GUN_DMG;
+  npc.flashUntil = performance.now() + 60;
+  for (const m of npc.meshes) m.material = flashMat;
+  if (npc.hp <= 0) {
+    if (npc.isCulprit) culpritDown(npc);
+    else killNpc(npc);
+  }
+}
+function killNpc(npc) {
+  killNpcVisual(npc);
+  if (isExcluded(npc)) {
+    G.score += SCORE_GOOD;
+    floatScore(npc, SCORE_GOOD);
+  } else {
+    const malus = currentMalus();
+    G.score += malus;
+    floatScore(npc, malus);
+    errorFlash();
+    sfx('wrong', 0.6);
+  }
+  updateHud();
+}
+// Mort visuelle commune : bascule au sol, teinte grisée, cadavre persistant lisible
+function killNpcVisual(npc) {
+  npc.dead = true;
+  npc.vx = npc.vz = 0;
+  G.npcAlive--;
+  G.kills++;
+  sfx('pop', 0.3 + volAt(npc.x, npc.z) * 0.7);
+  if (G.tying && G.tying.npc === npc) cancelTie();
+  rebuildTargets();
+  const dx = npc.x - player.x, dz = npc.z - player.z;
+  dying.push({ npc, start: performance.now(), yaw: Math.atan2(dx, dz) });
+}
+const dying = [];
+function updateDying() {
+  const now = performance.now();
+  for (let i = dying.length - 1; i >= 0; i--) {
+    const d = dying[i];
+    const t = Math.min(1, (now - d.start) / 200);
+    d.npc.group.rotation.y = d.yaw;
+    d.npc.group.rotation.x = -Math.PI / 2 * t;
+    d.npc.group.position.y = 0.25 * t;
+    if (t >= 1) {
+      for (const m of d.npc.meshes) m.material = getGrayMat(m.userData.hex);
+      dying.splice(i, 1);
+    }
+  }
+}
+function updateFlashes() {
+  const now = performance.now();
+  for (const n of G.npcs) {
+    if (n.flashUntil && now > n.flashUntil) {
+      n.flashUntil = 0;
+      const isDying = dying.some(d => d.npc === n);
+      for (const m of n.meshes) m.material = (n.dead && !isDying) ? getGrayMat(m.userData.hex) : getMat(m.userData.hex);
+    }
+  }
+}
+
+// --- Accusation canalisée (le « climax de vulnérabilité », version sans fouet) ---
+function aimedNpc() {
+  const hit = raycastCenter();
+  const npc = hit && hit.object.userData.npc;
+  if (!npc || npc.dead) return null;
+  if (hit.distance > ACCUSE_RANGE) return null;
+  return npc;
+}
+function tryStartAccuse() {
+  if (!G.finalPhase || G.gameOver || G.tying || !G.locked) return;
+  if (G.now < G.accuseCdUntil) return;
+  const npc = aimedNpc();
+  if (!npc) return;
+  if (isExcluded(npc)) {   // garde-fou pédagogique, comme le fouet 2D
+    showBanner('Déjà hors de cause !', 'Les indices innocentent ce passant. Cherche encore.', 2200);
+    sfx('wrong', 0.5);
+    return;
+  }
+  G.tying = { npc, start: G.now };
+  npc.vx = npc.vz = 0;
+  npc.nextThink = G.now + 999999;   // maîtrisé : il ne bouge plus pendant le canal
+  sfx('whip');
+  tieBar.style.display = 'block';
+}
+function cancelTie() {
+  if (!G.tying) return;
+  G.tying.npc.nextThink = G.now;
+  G.tying = null;
+  tieBar.style.display = 'none';
+}
+function updateTie() {
+  if (!G.tying) return;
+  const npc = G.tying.npc;
+  const { f, s } = moveInput();
+  const moved = f !== 0 || s !== 0 || !player.grounded || player.sliding;
+  if (!G.eHeld || moved || npc.dead) { cancelTie(); return; }
+  const progress = (G.now - G.tying.start) / ACCUSE_TIME;
+  tieBar.firstElementChild.style.width = Math.min(100, progress * 100) + '%';
+  if (progress >= 1) {
+    cancelTie();
+    if (npc.isCulprit) {
+      G.score += SCORE_CULPRIT;
+      floatScore(npc, SCORE_CULPRIT);
+      endGame(true, 'COUPABLE CAPTURÉ !', 'Le voleur de cookie est sous les verrous. La ville te doit un goûter.');
+    } else {
+      G.score += SCORE_WRONG_TIE;
+      floatScore(npc, SCORE_WRONG_TIE);
+      errorFlash();
+      sfx('wrong');
+      showBanner('MAUVAIS SUSPECT !', `${SCORE_WRONG_TIE} points. Il s'enfuit, furieux.`, 3000);
+      G.accuseCdUntil = G.now + ACCUSE_CD;
+      // Il fuit, traumatisé
+      const ang = Math.atan2(npc.x - player.x, npc.z - player.z);
+      npc.vx = Math.sin(ang) * NPC_FLEE_MAX;
+      npc.vz = Math.cos(ang) * NPC_FLEE_MAX;
+      npc.nextThink = G.now + 2500;
+      updateHud();
+    }
+  }
+}
+
+// ---------- S9. IA DES PNJ (port de 2d.html L2017-2041, 1594-1606) ----------
+function thinkNpc(npc) {
+  if (G.now < npc.nextThink) return;
+  if (Math.random() < 0.45) {
+    npc.vx = 0; npc.vz = 0;
+    npc.nextThink = G.now + 500 + Math.random() * 1800;
+  } else {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = NPC_WALK_MIN + Math.random() * (NPC_WALK_MAX - NPC_WALK_MIN);
+    npc.vx = Math.cos(angle) * speed;
+    npc.vz = Math.sin(angle) * speed;
+    npc.nextThink = G.now + 800 + Math.random() * 2200;
+  }
+}
+// Un coup de feu fait fuir les PNJ alentour à l'opposé du point d'origine
+function scareNpcs(x, z) {
+  for (const n of G.npcs) {
+    if (n.dead) continue;
+    if (n.nextThink > G.now + 5000) continue;   // maîtrisé (accusation) : il ne fuit pas
+    const d = Math.hypot(n.x - x, n.z - z);
+    if (d > SCARE_RADIUS) continue;
+    const ang = Math.atan2(n.z - z, n.x - x) + (Math.random() - 0.5) * 0.5;
+    const speed = NPC_FLEE_MIN + Math.random() * (NPC_FLEE_MAX - NPC_FLEE_MIN);
+    n.vx = Math.cos(ang) * speed;
+    n.vz = Math.sin(ang) * speed;
+    n.nextThink = G.now + 800 + Math.random() * 700;
+  }
+}
+function updateNpcs(dt) {
+  for (const n of G.npcs) {
+    if (n.dead) continue;
+    thinkNpc(n);
+    if (n.vx !== 0 || n.vz !== 0) {
+      n.x += n.vx * dt;
+      n.z += n.vz * dt;
+      n.x = Math.max(-HALF, Math.min(HALF, n.x));
+      n.z = Math.max(-HALF, Math.min(HALF, n.z));
+      // Pushout obstacles (cercle r=0.3 vs AABB)
+      for (const o of obstacles) {
+        const nx = Math.max(o.minX, Math.min(n.x, o.maxX));
+        const nz = Math.max(o.minZ, Math.min(n.z, o.maxZ));
+        const dx = n.x - nx, dz = n.z - nz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 0.09 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          n.x = nx + (dx / d) * 0.3;
+          n.z = nz + (dz / d) * 0.3;
+        }
+      }
+      // Orientation vers la marche + bob
+      const targetYaw = Math.atan2(n.vx, n.vz);
+      let dy = targetYaw - n.group.rotation.y;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      n.group.rotation.y += dy * Math.min(1, 8 * dt);
+      n.walkPhase += dt * 9;
+      n.group.position.y = Math.abs(Math.sin(n.walkPhase)) * 0.06;
+    } else {
+      n.group.position.y = 0;
+    }
+    n.group.position.x = n.x;
+    n.group.position.z = n.z;
+  }
+}
+
+// ---------- S10. HUD & ÉCRANS ----------
+const $ = (id) => document.getElementById(id);
+const hud = $('hud'), banner = $('banner'), tieBar = $('tieBar');
+const accusePrompt = $('accusePrompt'), hitFlashEl = $('hitFlash');
+let bannerTimeout = null;
+
+function showBanner(title, text, dur = 4000) {
+  banner.querySelector('.t').textContent = title;
+  banner.querySelector('.s').textContent = text;
+  banner.classList.add('show');
+  clearTimeout(bannerTimeout);
+  bannerTimeout = setTimeout(() => banner.classList.remove('show'), dur);
+}
+function refreshCluesList() {
+  const ul = $('cluesList');
+  ul.innerHTML = '';
+  G.revealedClues.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${i + 1}. ${CLUE_TEXTS[c.axis](c.value)}`;
+    ul.appendChild(li);
+  });
+}
+function updateHud() {
+  $('scoreBox').querySelector('.score').textContent = `SCORE ${G.score}`;
+  $('scoreBox').querySelector('.malus').textContent = `Erreur de tir : ${currentMalus()}`;
+  let excl = 0, susp = 0;
+  for (const n of G.npcs) {
+    if (n.dead) continue;
+    if (isExcluded(n)) excl++; else susp++;
+  }
+  $('cAlive').textContent = G.npcAlive;
+  $('cExcl').textContent = excl;
+  $('cSusp').textContent = susp;
+}
+function updateTimerHud() {
+  const roundEl = $('roundBox').querySelector('.round');
+  const timerEl = $('roundBox').querySelector('.timer');
+  let ms;
+  if (G.finalPhase) {
+    roundEl.textContent = 'FINALE';
+    timerEl.classList.add('final');
+    ms = Math.max(0, G.finalEndAt - G.now);
+  } else {
+    roundEl.textContent = `MANCHE ${G.revealedClues.length + 1}/${MAX_ROUNDS}`;
+    ms = Math.max(0, G.nextClueAt - G.now);
+  }
+  const s = Math.ceil(ms / 1000);
+  timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function floatScore(npc, amount) {
+  const v = new THREE.Vector3(npc.x, 1.6, npc.z).project(camera);
+  if (v.z > 1) return;   // derrière la caméra
+  const el = document.createElement('div');
+  el.className = 'float ' + (amount > 0 ? 'good' : 'bad');
+  el.textContent = (amount > 0 ? '+' : '') + amount;
+  el.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+  el.style.top = ((1 - (v.y + 1) / 2) * innerHeight) + 'px';
+  hud.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+function errorFlash() {
+  hitFlashEl.style.opacity = 1;
+  setTimeout(() => { hitFlashEl.style.opacity = 0; }, 160);
+}
+function endGame(win, title, text) {
+  if (G.gameOver) return;
+  G.gameOver = true;
+  cancelTie();
+  sfx(win ? 'win' : 'lose');
+  if (document.pointerLockElement) document.exitPointerLock();
+  setTimeout(() => {
+    $('endTitle').textContent = title;
+    $('endTitle').style.color = win ? '#7dd94a' : '#ff6a55';
+    $('endText').textContent = text;
+    $('endStats').textContent = `Score final : ${G.score} • Éliminations : ${G.kills}`;
+    $('endScreen').style.display = 'flex';
+    hud.style.display = 'none';
+  }, 700);
+}
+$('replayBtn').addEventListener('click', () => location.reload());
+
+// ---------- Pointer lock, titre, pause ----------
+const canvas = renderer.domElement;
+function lockPointer() {
+  try {
+    const p = canvas.requestPointerLock();
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) { /* navigateurs sans pointer lock */ }
+}
+$('startBtn').addEventListener('click', () => {
+  getAudioCtx();   // déverrouillage audio au clic, comme l'écran titre 2D
+  lockPointer();
+  if (!G.started) startGame();
+});
+$('pauseOverlay').addEventListener('click', lockPointer);
+document.addEventListener('pointerlockchange', () => {
+  G.locked = document.pointerLockElement === canvas;
+  if (G.locked) {
+    $('titleScreen').style.display = 'none';
+    $('pauseOverlay').style.display = 'none';
+    hud.style.display = 'block';
+  } else {
+    G.mouseHeld = false;
+    cancelTie();
+    if (G.started && !G.gameOver) $('pauseOverlay').style.display = 'flex';
+  }
+});
+
+function startGame() {
+  G.started = true;
+  // La foule + le coupable
+  for (let i = 0; i < NPC_COUNT; i++) G.npcs.push(spawnNpc());
+  const culprit = G.npcs[Math.floor(Math.random() * G.npcs.length)];
+  culprit.isCulprit = true;
+  G.culpritAttrs = culprit.attrs;
+  initCluePool();
+  rebuildTargets();
+  updateHud();
+  showBanner('MANCHE 1', `Observe la foule… premier indice dans ${CLUE_INTERVAL / 1000} s !`, 4500);
+}
+
+// ---------- S11. BOUCLE PRINCIPALE ----------
+// Hook de debug/test (piloter le jeu sans pointer lock, ex. tests headless)
+window.__G = G;
+window.__player = player;
+
+let lastT = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
+  const wallNow = performance.now();
+  let dt = Math.min(0.05, (wallNow - lastT) / 1000);
+  lastT = wallNow;
+
+  const running = G.started && G.locked && !G.gameOver;
+  if (running) {
+    G.now += dt * 1000;
+
+    updatePlayer(dt);
+    updateNpcs(dt);
+
+    if (G.mouseHeld) shoot();
+    updateTie();
+
+    // Cadence des manches (pattern 2D : now >= nextClueAt → startRound)
+    if (!G.finalPhase && G.now >= G.nextClueAt) startRound();
+    if (G.finalPhase && G.now >= G.finalEndAt && !G.gameOver) {
+      endGame(false, 'LE COUPABLE S\'EST ENFUI…', 'Le temps est écoulé. Quelque part, quelqu\'un croque TON cookie.');
+    }
+
+    // Prompt d'accusation
+    if (G.finalPhase && !G.tying && G.now >= G.accuseCdUntil) {
+      accusePrompt.style.display = aimedNpc() ? 'block' : 'none';
+    } else {
+      accusePrompt.style.display = 'none';
+    }
+    updateTimerHud();
+
+    // Recul du viewmodel
+    vmKick *= Math.exp(-10 * dt);
+    viewmodel.position.z = -0.45 + vmKick * 0.06;
+    viewmodel.rotation.x = vmKick * 0.12;
+  }
+
+  updateDying();
+  updateFlashes();
+  updateTracers();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
