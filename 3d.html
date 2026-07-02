@@ -64,6 +64,24 @@
   #hitFlash { position: absolute; inset: 0; background: radial-gradient(ellipse at center,
               transparent 55%, rgba(224,74,58,.45) 100%); opacity: 0; transition: opacity .1s; }
 
+  /* Barre de vie */
+  .hpwrap { margin-top: 8px; width: 160px; height: 11px; background: rgba(0,0,0,.5);
+            border-radius: 6px; overflow: hidden; }
+  #hpFill { height: 100%; width: 100%; background: #7dd94a; border-radius: 6px; }
+
+  /* Zone : vignette de dégâts + minimap */
+  #zoneVignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center,
+                  transparent 42%, rgba(224,74,58,.6) 100%); opacity: 0; }
+  #minimap { position: absolute; bottom: 14px; left: 14px; background: rgba(44,58,30,.72);
+             border: 2px solid rgba(255,224,138,.55); border-radius: 10px; }
+
+  /* Down / respawn */
+  #downOverlay { position: absolute; inset: 0; display: none; flex-direction: column;
+                 align-items: center; justify-content: center; text-align: center;
+                 background: rgba(30,18,16,.55); }
+  #downOverlay .d1 { color: #ff6a55; font-size: 36px; text-shadow: 3px 3px 0 rgba(0,0,0,.5); }
+  #downOverlay .d2 { color: #fff; font-family: Arial, sans-serif; font-size: 17px; margin-top: 12px; }
+
   /* ---------- Écrans ---------- */
   .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
             justify-content: center; gap: 18px; text-align: center; background: rgba(44,58,30,.92);
@@ -90,14 +108,19 @@
 
 <div id="hud">
   <div id="banner" class="panel"><div class="t"></div><div class="s"></div></div>
-  <div id="scoreBox" class="panel"><div class="score">SCORE 0</div><div class="malus">Erreur de tir : −10</div></div>
+  <div id="scoreBox" class="panel"><div class="score">SCORE 0</div><div class="malus">Erreur de tir : −10</div>
+    <div class="hpwrap"><div id="hpFill"></div></div></div>
   <div id="roundBox" class="panel"><div class="round">MANCHE 1/4</div><div class="timer">0:30</div></div>
   <div id="cluesBox" class="panel"><div class="h">INDICES</div><ul id="cluesList"><li style="color:#9fb086">Aucun indice pour l'instant…</li></ul></div>
   <div id="npcBox" class="panel"><b id="cAlive">120</b> passants • <b id="cExcl">0</b> exclus restants • <b id="cSusp">120</b> suspects</div>
   <div id="crosshair"></div>
   <div id="accusePrompt">Maintenir <b>E</b> — ACCUSER</div>
   <div id="tieBar"><div></div><span class="lbl">ACCUSATION EN COURS…</span></div>
+  <div id="zoneVignette"></div>
   <div id="hitFlash"></div>
+  <canvas id="minimap" width="150" height="150"></canvas>
+  <div id="downOverlay"><div class="d1">ÉLIMINÉ PAR LA ZONE !</div>
+    <div class="d2">Respawn dans <span id="downCount">30</span> s</div></div>
 </div>
 
 <div id="titleScreen" class="screen">
@@ -194,9 +217,20 @@ const ACCUSE_TIME = 5000;          // 5 s immobile, E maintenu
 const ACCUSE_CD = 3000;            // après une mauvaise accusation
 const FINAL_TIME = 60000;          // timer de la phase finale
 
+// Zone — mêmes ratios que le 2D (1560 px sur 2200 → 99 m sur 140)
+const ZONE_START_R = 99;
+const ZONE_SHRINK_FACTOR = 0.7;
+const ZONE_MIN_R = 14;
+const ZONE_SHRINK_MS = 10000;
+
+// Joueur : PV / down / respawn (identique au 2D)
+const PLAYER_MAX_HP = 100;
+const RESPAWN_MS = 30000;
+
 // PNJ
 const NPC_WALK_MIN = 1.1, NPC_WALK_MAX = 1.7;   // m/s errance
 const NPC_FLEE_MIN = 4.2, NPC_FLEE_MAX = 5.4;   // m/s panique
+const NPC_MIGRATE_MIN = 2.6, NPC_MIGRATE_MAX = 4.0;  // m/s retour en zone
 
 // ---------- S2. ÉTAT DU JEU ----------
 const G = {
@@ -206,6 +240,8 @@ const G = {
   npcs: [], npcAlive: NPC_COUNT,
   culpritAttrs: null, cluePool: [], revealedClues: [],
   nextClueAt: CLUE_INTERVAL, finalPhase: false, finalEndAt: 0,
+  zoneR: ZONE_START_R, zoneFrom: ZONE_START_R, zoneTo: ZONE_START_R,
+  zonePhase: 0, zoneShrinkStart: 0,
   tying: null,                  // { npc, start }
   accuseCdUntil: 0, eHeld: false,
   nextFireAt: 0, mouseHeld: false,
@@ -255,6 +291,8 @@ function sfx(name, vol = 1) {
     case 'pop':    tone(320, 90, 0.12, 'sine', 0.18 * vol); break;
     case 'clue':   [523, 659, 784].forEach((f, i) => setTimeout(() => tone(f, f, 0.14, 'triangle', 0.16 * vol), i * 110)); break;
     case 'wrong':  tone(220, 80, 0.35, 'sawtooth', 0.18 * vol); break;
+    case 'hurt':   tone(160, 90, 0.08, 'triangle', 0.20 * vol); break;
+    case 'down':   noise(0.35, 0.30 * vol, 300); tone(100, 35, 0.4, 'sine', 0.30 * vol); break;
     case 'whip':   noise(0.09, 0.20 * vol, 3500); break;
     case 'win':    [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, f, 0.18, 'triangle', 0.20 * vol), i * 130)); break;
     case 'lose':   [392, 311, 233].forEach((f, i) => setTimeout(() => tone(f, f, 0.25, 'triangle', 0.20 * vol), i * 160)); break;
@@ -332,6 +370,16 @@ for (let i = 0; i < 10; i++) {   // pépites
   chip.position.set(Math.cos(a) * r, 0.11, Math.sin(a) * r);
   scene.add(chip);
 }
+
+// Mur de zone : cylindre rouge translucide, rayon = G.zoneR
+const zoneWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(1, 1, 14, 64, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0xe04a3a, transparent: true, opacity: 0.22,
+                                side: THREE.DoubleSide, depthWrite: false })
+);
+zoneWall.position.y = 7;
+zoneWall.scale.set(ZONE_START_R, 1, ZONE_START_R);
+scene.add(zoneWall);
 
 // Décor blocky : caisses + buissons, déterministes, avec AABB (collision + cover)
 const obstacles = [];        // { minX, maxX, minZ, maxZ }
@@ -516,6 +564,14 @@ function startRound() {
   } else {
     G.nextClueAt = G.now + CLUE_INTERVAL;
   }
+
+  // Resserrement : 4 paliers, comme en 2D
+  if (G.zonePhase < MAX_ROUNDS) {
+    G.zonePhase++;
+    G.zoneFrom = G.zoneR;
+    G.zoneTo = Math.max(ZONE_MIN_R, G.zoneTo * ZONE_SHRINK_FACTOR);
+    G.zoneShrinkStart = G.now;
+  }
 }
 
 // Mort du coupable par balle → transfert du rôle (port de 2d.html L734-787)
@@ -548,6 +604,7 @@ const player = {
   x: 0, y: 0, z: 0,            // y = hauteur des PIEDS
   vx: 0, vy: 0, vz: 0,
   yaw: 0, pitch: 0,
+  hp: PLAYER_MAX_HP, down: false, downUntil: 0,
   grounded: true,
   sliding: false, slideUntil: 0, slideCdUntil: 0, slideDirX: 0, slideDirZ: 0,
   eyeH: EYE, recoil: 0, bobPhase: 0
@@ -609,6 +666,19 @@ function collidePlayer() {
 }
 
 function updatePlayer(dt) {
+  if (player.down) {   // au sol : caméra couchée, regard libre, aucun contrôle
+    player.vx = player.vz = 0;
+    if (!player.grounded) {
+      player.vy -= GRAVITY * dt;
+      player.y += player.vy * dt;
+      if (player.y <= 0) { player.y = 0; player.vy = 0; player.grounded = true; }
+    }
+    player.eyeH += (0.35 - player.eyeH) * Math.min(1, 6 * dt);
+    camera.position.set(player.x, player.y + player.eyeH, player.z);
+    camera.rotation.y = player.yaw;
+    camera.rotation.x = player.pitch;
+    return;
+  }
   const { f, s } = moveInput();
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   // avant = -Z tourné par yaw
@@ -743,7 +813,7 @@ function updateTracers() {
 }
 
 function shoot() {
-  if (G.now < G.nextFireAt || G.tying) return;
+  if (G.now < G.nextFireAt || G.tying || player.down) return;
   G.nextFireAt = G.now + FIRE_CD;
   sfx('pistol');
   player.recoil += 0.016;
@@ -840,7 +910,7 @@ function aimedNpc() {
   return npc;
 }
 function tryStartAccuse() {
-  if (!G.finalPhase || G.gameOver || G.tying || !G.locked) return;
+  if (!G.finalPhase || G.gameOver || G.tying || !G.locked || player.down) return;
   if (G.now < G.accuseCdUntil) return;
   const npc = aimedNpc();
   if (!npc) return;
@@ -895,6 +965,18 @@ function updateTie() {
 // ---------- S9. IA DES PNJ (port de 2d.html L2017-2041, 1594-1606) ----------
 function thinkNpc(npc) {
   if (G.now < npc.nextThink) return;
+
+  // Hors zone (ou presque) : cap vers le centre, d'un pas pressé,
+  // avec dispersion angulaire pour éviter la colonne de fourmis (comme en 2D)
+  if (Math.hypot(npc.x, npc.z) > G.zoneR * 0.92) {
+    const angle = Math.atan2(-npc.z, -npc.x) + (Math.random() - 0.5) * 0.9;
+    const speed = NPC_MIGRATE_MIN + Math.random() * (NPC_MIGRATE_MAX - NPC_MIGRATE_MIN);
+    npc.vx = Math.cos(angle) * speed;
+    npc.vz = Math.sin(angle) * speed;
+    npc.nextThink = G.now + 600 + Math.random() * 900;
+    return;
+  }
+
   if (Math.random() < 0.45) {
     npc.vx = 0; npc.vz = 0;
     npc.nextThink = G.now + 500 + Math.random() * 1800;
@@ -1021,6 +1103,87 @@ function errorFlash() {
   hitFlashEl.style.opacity = 1;
   setTimeout(() => { hitFlashEl.style.opacity = 0; }, 160);
 }
+
+// ---------- Zone & joueur (PV / down / respawn) ----------
+const zoneVig = $('zoneVignette'), downOverlay = $('downOverlay');
+const downCount = $('downCount'), hpFill = $('hpFill');
+
+function updateZone(dt) {
+  if (G.zoneR > G.zoneTo) {
+    const t = Math.min(1, (G.now - G.zoneShrinkStart) / ZONE_SHRINK_MS);
+    G.zoneR = G.zoneFrom + (G.zoneTo - G.zoneFrom) * t;
+  }
+  zoneWall.scale.set(G.zoneR, 1, G.zoneR);
+  const outside = Math.hypot(player.x, player.z) > G.zoneR;
+  if (outside && !player.down) {
+    damagePlayer((3 + G.zonePhase * 2.5) * dt, 'LA ZONE');
+    zoneVig.style.opacity = 0.5 + 0.3 * Math.sin(G.now / 150);
+  } else {
+    zoneVig.style.opacity = 0;
+  }
+}
+function randomPointInZone() {
+  const a = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * Math.max(5, (G.zoneR || ZONE_START_R) - 3);
+  return {
+    x: Math.max(-HALF, Math.min(HALF, Math.cos(a) * r)),
+    z: Math.max(-HALF, Math.min(HALF, Math.sin(a) * r))
+  };
+}
+function updateHpBar() {
+  const pct = Math.max(0, player.hp) / PLAYER_MAX_HP * 100;
+  hpFill.style.width = pct + '%';
+  hpFill.style.background = pct > 50 ? '#7dd94a' : pct > 25 ? '#ffe08a' : '#ff6a55';
+}
+function damagePlayer(dmg, source) {
+  if (player.down || G.gameOver) return;
+  player.hp -= dmg;
+  if (dmg >= 1) sfx('hurt');
+  updateHpBar();
+  if (player.hp <= 0) downPlayer(source);
+}
+function downPlayer(source) {
+  player.down = true;
+  player.downUntil = G.now + RESPAWN_MS;
+  player.hp = 0;
+  player.sliding = false;
+  G.mouseHeld = false;
+  cancelTie();
+  sfx('down');
+  downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${source} !`;
+  downOverlay.style.display = 'flex';
+}
+function respawnPlayer() {
+  player.down = false;
+  player.hp = PLAYER_MAX_HP;
+  const p = randomPointInZone();
+  player.x = p.x; player.z = p.z;
+  player.vx = player.vz = 0;
+  downOverlay.style.display = 'none';
+  updateHpBar();
+}
+
+// ---------- Minimap (zone + joueur) ----------
+const mmCtx = $('minimap').getContext('2d');
+function drawMinimap() {
+  const s = 150 / WORLD, cx = 75, cz = 75;
+  mmCtx.clearRect(0, 0, 150, 150);
+  mmCtx.strokeStyle = '#e04a3a';
+  mmCtx.lineWidth = 2;
+  mmCtx.beginPath();
+  mmCtx.arc(cx, cz, G.zoneR * s, 0, Math.PI * 2);
+  mmCtx.stroke();
+  const px = cx + player.x * s, pz = cz + player.z * s;
+  mmCtx.fillStyle = '#fff';
+  mmCtx.beginPath();
+  mmCtx.arc(px, pz, 3, 0, Math.PI * 2);
+  mmCtx.fill();
+  mmCtx.strokeStyle = '#fff';
+  mmCtx.beginPath();
+  mmCtx.moveTo(px, pz);
+  mmCtx.lineTo(px - Math.sin(player.yaw) * 8, pz - Math.cos(player.yaw) * 8);
+  mmCtx.stroke();
+}
 function endGame(win, title, text) {
   if (G.gameOver) return;
   G.gameOver = true;
@@ -1096,6 +1259,12 @@ function animate() {
 
     updatePlayer(dt);
     updateNpcs(dt);
+    updateZone(dt);
+
+    if (player.down) {
+      downCount.textContent = Math.ceil((player.downUntil - G.now) / 1000);
+      if (G.now >= player.downUntil) respawnPlayer();
+    }
 
     if (G.mouseHeld) shoot();
     updateTie();
@@ -1113,6 +1282,7 @@ function animate() {
       accusePrompt.style.display = 'none';
     }
     updateTimerHud();
+    drawMinimap();
 
     // Recul du viewmodel
     vmKick *= Math.exp(-10 * dt);
