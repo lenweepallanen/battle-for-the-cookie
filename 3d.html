@@ -58,6 +58,17 @@
   #reloadBar .lbl { position: absolute; top: -18px; width: 100%; text-align: center;
                     color: #ffe08a; font-size: 11px; font-family: Arial, sans-serif; }
 
+  /* Lunette du sniper */
+  #scope { position: absolute; inset: 0; display: none; pointer-events: none; }
+  #scope .hole { position: absolute; top: 50%; left: 50%; width: 68vmin; height: 68vmin;
+                 transform: translate(-50%,-50%); border-radius: 50%;
+                 box-shadow: 0 0 0 200vmax rgba(6,6,6,.98), inset 0 0 40px rgba(0,0,0,.9);
+                 border: 3px solid #0a0a0a; }
+  #scope .hl { position: absolute; top: 50%; left: 50%; width: 68vmin; height: 1.5px;
+               background: rgba(10,10,10,.85); transform: translate(-50%,-50%); }
+  #scope .vl { position: absolute; top: 50%; left: 50%; width: 1.5px; height: 68vmin;
+               background: rgba(10,10,10,.85); transform: translate(-50%,-50%); }
+
   #accusePrompt { position: absolute; top: 56%; left: 50%; transform: translateX(-50%);
                   color: #ffe08a; font-size: 16px; text-shadow: 2px 2px 0 rgba(0,0,0,.5); display: none; }
   #tieBar { position: absolute; top: 62%; left: 50%; transform: translateX(-50%); width: 260px; height: 16px;
@@ -157,6 +168,7 @@
   <div id="lb" class="panel"><div class="h">CLASSEMENT</div><div id="lbLines"></div></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="c"></i></div>
   <div id="hitmark">+</div>
+  <div id="scope"><div class="hole"></div><div class="hl"></div><div class="vl"></div></div>
   <div id="reloadBar"><div></div><span class="lbl">RECHARGEMENT…</span></div>
   <div id="accusePrompt">Maintenir <b>E</b> — ACCUSER</div>
   <div id="tieBar"><div></div><span class="lbl">LIGOTAGE — immobile, clic maintenu !</span></div>
@@ -168,6 +180,7 @@
     <div class="slot off" data-w="rifle"><span class="k">2</span><span class="n">Fusil</span><span class="a">0</span></div>
     <div class="slot off" data-w="shotgun"><span class="k">3</span><span class="n">Pompe</span><span class="a">0</span></div>
     <div class="slot off" data-w="rocket"><span class="k">4</span><span class="n">Roquette</span><span class="a">0</span></div>
+    <div class="slot off" data-w="sniper"><span class="k">5</span><span class="n">Sniper</span><span class="a">0</span></div>
     <div class="slot off" data-w="medkit"><span class="k">F</span><span class="n">Medkit</span><span class="a">×0</span></div>
   </div>
   <div id="healBar"><div></div></div>
@@ -182,7 +195,7 @@
      Purge les innocentés (<b style="color:#7dd94a">+10</b>), épargne les suspects (malus croissant !) et, en phase finale,
      <b>accuse le coupable</b> — de près, sans bouger, pendant 5 secondes.</p>
   <div class="controls">
-    ZQSD / WASD — se déplacer &nbsp;•&nbsp; Souris — viser / tirer &nbsp;•&nbsp; 1-4 / molette — armes<br>
+    ZQSD / WASD — se déplacer &nbsp;•&nbsp; Clic — tirer &nbsp;•&nbsp; Clic droit — viser &nbsp;•&nbsp; 1-5 / molette — armes<br>
     Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; R — recharger &nbsp;•&nbsp; F — medkit &nbsp;•&nbsp; E — fouet (finale)<br>
     Échap — pause &nbsp;•&nbsp; <i>Desktop uniquement</i>
   </div>
@@ -203,8 +216,21 @@
   <a class="home" href="index.html">← retour à l'accueil</a>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
 <script type="module">
-import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.170.0/three.module.min.js';
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ============================================================
 // BATTLE FOR THE COOKIE — MODE 3D FPS (prototype, Jalon 3D-1)
@@ -265,10 +291,15 @@ const WEAPONS = {
   pistol:  { name: 'Pistolet', dmg: 12, cd: 400,  pellets: 1, spread: 0.03, infinite: true, kick: 0.012, snd: 'pistol', mag: 12, reload: 1100 },
   rifle:   { name: 'Fusil',    dmg: 12, cd: 150,  pellets: 1, spread: 0.05, kick: 0.009, snd: 'rifle', mag: 25, reload: 1600 },
   shotgun: { name: 'Pompe',    dmg: 8,  cd: 900,  pellets: 5, spread: 0.45, range: 16, kick: 0.030, snd: 'shotgun', mag: 6, reload: 2000 },
-  rocket:  { name: 'Roquette', dmg: 60, cd: 1200, explosive: true, radius: 5.7, speed: 26.7, life: 1600, kick: 0.020, snd: 'rocket', mag: 1, reload: 1500 }
+  rocket:  { name: 'Roquette', dmg: 60, cd: 1200, explosive: true, radius: 5.7, speed: 26.7, life: 1600, kick: 0.020, snd: 'rocket', mag: 1, reload: 1500, adsFov: 60 },
+  sniper:  { name: 'Sniper',   dmg: 95, cd: 1400, pellets: 1, spread: 0.08, kick: 0.045, snd: 'sniper', mag: 5, reload: 2500, adsFov: 20, scoped: true }
 };
+WEAPONS.pistol.adsFov = 58;
+WEAPONS.rifle.adsFov = 55;
+WEAPONS.shotgun.adsFov = 60;
+const SNIPER_TOTAL = 50;           // l'UNIQUE sniper de la map : 50 balles en tout
 const HEADSHOT_MULT = 2;           // le skill de visée : la tête paie double
-const WEAPON_ORDER = ['pistol', 'rifle', 'shotgun', 'rocket'];
+const WEAPON_ORDER = ['pistol', 'rifle', 'shotgun', 'rocket', 'sniper'];
 const AMMO_PACK = { rifle: 30, shotgun: 12, rocket: 1 };
 const MEDKIT_HEAL = 50;
 const MEDKIT_MAX = 3;
@@ -338,8 +369,10 @@ const G = {
     pistol:  { owned: true,  ammo: Infinity, mag: 12 },
     rifle:   { owned: false, ammo: 0, mag: 0 },
     shotgun: { owned: false, ammo: 0, mag: 0 },
-    rocket:  { owned: false, ammo: 0, mag: 0 }
+    rocket:  { owned: false, ammo: 0, mag: 0 },
+    sniper:  { owned: false, ammo: 0, mag: 0 }
   },
+  adsHeld: false,
   currentWeapon: 'pistol', medkits: 0, healing: null,
   reloading: null, spray: 0,
   loot: [], bots: [], spawnPoints: [],
@@ -393,6 +426,8 @@ function sfx(name, vol = 1) {
                    noise(0.04, 0.07 * vol, 3000); break; }
     case 'shotgun': { const v = 0.9 + Math.random() * 0.2;
                    noise(0.18, 0.30 * vol, 900); tone(120 * v, 40, 0.15, 'square', 0.10 * vol); break; }
+    case 'sniper': tone(150, 35, 0.3, 'sawtooth', 0.22 * vol);
+                   noise(0.18, 0.38 * vol, 1200); break;
     case 'hit':    tone(1150, 900, 0.045, 'square', 0.09 * vol); break;
     case 'headshot': tone(1600, 1600, 0.08, 'triangle', 0.16 * vol); break;
     case 'kill':   tone(520, 240, 0.12, 'square', 0.15 * vol); break;
@@ -418,28 +453,101 @@ function sfx(name, vol = 1) {
 }
 
 // ---------- S4. SCÈNE ----------
-const SKY = 0xbfd7e8;
+// Palette « heure dorée » : brume chaude à l'horizon, profondeur sans gêner la lecture (<50 m)
+const HORIZON = 0xe8cfa8;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 70, 200);   // profondeur sans gêner la lecture (<50 m)
+scene.background = new THREE.Color(HORIZON);
+scene.fog = new THREE.Fog(HORIZON, 70, 200);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 250);
 camera.rotation.order = 'YXZ';
 
+// ?lowfx=1 : pas d'ombres ni de post-processing (machines modestes, tests headless)
+const LOWFX = new URLSearchParams(location.search).has('lowfx');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = !LOWFX;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 document.body.prepend(renderer.domElement);
+
+// Post-processing : bloom subtil (tracers, flash, explosions) + tone mapping filmique
+let composer = null;
+if (!LOWFX) {
+  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+    innerWidth, innerHeight, { samples: 4, type: THREE.HalfFloatType }));
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.6, 0.82));
+  composer.addPass(new OutputPass());
+}
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  if (composer) composer.setSize(innerWidth, innerHeight);
 });
 
-scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x6f8a4f, 1.0));
-const sun = new THREE.DirectionalLight(0xfff2d0, 1.4);
-sun.position.set(1, 2, 0.8);
+// Lumière de fin d'après-midi : soleil chaud et bas → ombres longues et lisibles.
+// La caméra d'ombre SUIT le joueur : netteté constante sans couvrir les 140 m.
+scene.add(new THREE.HemisphereLight(0xcfd8ec, 0x77894f, 0.88));
+const sun = new THREE.DirectionalLight(0xffd9a0, 1.7);
+sun.position.set(45, 60, 27);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -48;
+sun.shadow.camera.right = 48;
+sun.shadow.camera.top = 48;
+sun.shadow.camera.bottom = -48;
+sun.shadow.camera.near = 10;
+sun.shadow.camera.far = 170;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.6;
+sun.shadow.camera.updateProjectionMatrix();   // indispensable après les bornes
 scene.add(sun);
+scene.add(sun.target);
+
+// Dôme de ciel procédural : dégradé zénith → horizon doré, nuages plats, disque solaire
+function makeSkyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, '#6ea3dc');     // zénith
+  grad.addColorStop(0.5, '#b7cfe6');
+  grad.addColorStop(0.76, '#eedab0');   // bande dorée
+  grad.addColorStop(1, '#e8cfa8');     // horizon = couleur du fog
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 14; i++) {       // nuages doux
+    const x = Math.random() * 512, y = 90 + Math.random() * 160;
+    const w = 50 + Math.random() * 90, h = 8 + Math.random() * 12;
+    const cg = g.createRadialGradient(x, y, 2, x, y, w);
+    cg.addColorStop(0, 'rgba(255,250,240,0.55)');
+    cg.addColorStop(1, 'rgba(255,250,240,0)');
+    g.fillStyle = cg;
+    g.save(); g.translate(x, y); g.scale(1, h / w); g.translate(-x, -y);
+    g.beginPath(); g.arc(x, y, w, 0, Math.PI * 2); g.fill(); g.restore();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(210, 24, 16),
+  new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide,
+                                fog: false, depthWrite: false })
+);
+skyDome.renderOrder = -1;
+scene.add(skyDome);
+{
+  const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(10, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfff2cc, fog: false, transparent: true, opacity: 0.95 }));
+  sunDisc.position.set(45, 33, 27).normalize().multiplyScalar(196);
+  sunDisc.lookAt(0, 0, 0);
+  skyDome.add(sunDisc);
+}
 
 // PRNG déterministe — même graine que le pattern du 2D : décor identique à chaque partie
 let seed = 987654321;
@@ -470,6 +578,7 @@ const ground = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ map: makeGroundTexture() })
 );
 ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
 scene.add(ground);
 
 // ---------- SANG : taches persistantes sur une CanvasTexture au sol ----------
@@ -512,6 +621,7 @@ const plaza = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0xc98f4e })
 );
 plaza.position.y = 0.05;
+plaza.receiveShadow = true;
 scene.add(plaza);
 for (let i = 0; i < 10; i++) {   // pépites
   const chip = new THREE.Mesh(
@@ -533,18 +643,101 @@ zoneWall.position.y = 7;
 zoneWall.scale.set(ZONE_START_R, 1, ZONE_START_R);
 scene.add(zoneWall);
 
-// Décor blocky : AABB 3D (minY/maxY) — collision, cover ET verticalité
+// Décor blocky : AABB 3D (minY/maxY) — collision, cover ET verticalité.
+// Le visuel est FUSIONNÉ par matériau (≈12 draw calls pour toute la map),
+// avec des textures de détail procédurales teintées par la couleur du bloc.
 const obstacles = [];        // { minX, maxX, minY, maxY, minZ, maxZ }
 const obstacleMeshes = [];
 const GEO_BOX = new THREE.BoxGeometry(1, 1, 1);
-function addObstacle(x, z, w, h, d, hex, y0 = 0) {
-  const m = new THREE.Mesh(GEO_BOX, new THREE.MeshLambertMaterial({ color: hex }));
-  m.scale.set(w, h, d);
-  m.position.set(x, y0 + h / 2, z);
-  scene.add(m);
-  obstacleMeshes.push(m);
+const staticParts = [];      // { geo, key } en attente de fusion
+
+const detailCache = new Map();
+function detailTex(kind) {
+  if (detailCache.has(kind)) return detailCache.get(kind);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, 128, 128);
+  const shade = (v, x, y, w, h) => { g.fillStyle = `rgba(0,0,0,${v})`; g.fillRect(x, y, w, h); };
+  if (kind === 'planks') {
+    for (let i = 0; i < 4; i++) {
+      shade(0.04 + (i % 2) * 0.05, 0, i * 32, 128, 32);
+      shade(0.3, 0, i * 32, 128, 2);
+      for (let j = 0; j < 5; j++)
+        shade(0.09, Math.random() * 116, i * 32 + 5 + Math.random() * 23, 6 + Math.random() * 14, 1);
+    }
+  } else if (kind === 'brick') {
+    for (let row = 0; row < 8; row++) {
+      const y = row * 16, off = (row % 2) * 16;
+      shade(0.22, 0, y, 128, 2);
+      for (let bx = -1; bx < 5; bx++) {
+        const x = bx * 32 + off;
+        shade(0.22, x, y, 2, 16);
+        shade(Math.random() * 0.12, x + 2, y + 2, 30, 14);
+      }
+    }
+  } else if (kind === 'stone') {
+    for (let i = 0; i < 70; i++)
+      shade(0.04 + Math.random() * 0.1, Math.random() * 122, Math.random() * 122,
+        3 + Math.random() * 9, 2 + Math.random() * 7);
+  } else if (kind === 'metal') {
+    for (let x = 0; x < 128; x += 16) {
+      shade(0.16, x, 0, 3, 128);
+      shade(0.06, x + 3, 0, 4, 128);
+    }
+  } else if (kind === 'leaf') {
+    for (let i = 0; i < 130; i++)
+      shade(0.05 + Math.random() * 0.14, Math.random() * 125, Math.random() * 125, 3, 3);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  detailCache.set(kind, tex);
+  return tex;
+}
+const structMats = new Map();
+function matFor(kind, hex) {
+  const key = kind + ':' + hex;
+  if (!structMats.has(key))
+    structMats.set(key, new THREE.MeshLambertMaterial({ color: +hex, map: detailTex(kind) }));
+  return structMats.get(key);
+}
+// Densité de texels constante : ~1 tuile de texture par 2 m, quel que soit le bloc
+function scaleBoxUVs(geo, w, h, d) {
+  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  const uv = geo.attributes.uv;
+  for (let f = 0; f < 6; f++) {
+    for (let v = f * 4; v < f * 4 + 4; v++) {
+      uv.setXY(v, uv.getX(v) * dims[f][0] / 2, uv.getY(v) * dims[f][1] / 2);
+    }
+  }
+}
+function addObstacle(x, z, w, h, d, hex, y0 = 0, kind = 'planks') {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  scaleBoxUVs(geo, w, h, d);
+  geo.translate(x, y0 + h / 2, z);
+  staticParts.push({ geo, key: kind + ':' + hex });
   obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minY: y0, maxY: y0 + h,
                    minZ: z - d / 2, maxZ: z + d / 2 });
+}
+function buildStaticDecor() {
+  const byKey = new Map();
+  for (const p of staticParts) {
+    if (!byKey.has(p.key)) byKey.set(p.key, []);
+    byKey.get(p.key).push(p.geo);
+  }
+  for (const [key, geos] of byKey) {
+    const i = key.indexOf(':');
+    const mesh = new THREE.Mesh(mergeGeometries(geos, false),
+      matFor(key.slice(0, i), key.slice(i + 1)));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    obstacleMeshes.push(mesh);
+  }
+  staticParts.length = 0;
 }
 // Un point (x,z) est-il dans l'emprise au sol d'un solide ? (spawns, loot, patrouilles)
 function footprintBlocked(x, z, pad = 0.6) {
@@ -562,7 +755,7 @@ function addStairs(x, z, dx, dz, width, topH, hex = 0x9a8a6a) {
   for (let i = 0; i < n; i++) {
     const cx = x + dx * (i + 0.5) * stepD;
     const cz = z + dz * (i + 0.5) * stepD;
-    addObstacle(cx, cz, dx ? stepD : width, (i + 1) * stepH, dz ? stepD : width, hex);
+    addObstacle(cx, cz, dx ? stepD : width, (i + 1) * stepH, dz ? stepD : width, hex, 0, 'stone');
   }
 }
 // Bâtiment : 4 murs (porte sur un côté), toit praticable, parapets franchissables
@@ -582,27 +775,61 @@ function addBuilding(x, z, w, d, h, wallHex, doorSide) {
       for (const sgn of [-1, 1]) {
         const cx = s.alongX ? s.cx + sgn * off : s.cx;
         const cz = s.alongX ? s.cz : s.cz + sgn * off;
-        addObstacle(cx, cz, s.alongX ? segLen : t, h, s.alongX ? t : segLen, wallHex);
+        addObstacle(cx, cz, s.alongX ? segLen : t, h, s.alongX ? t : segLen, wallHex, 0, 'brick');
       }
-      addObstacle(s.cx, s.cz, s.alongX ? DOOR : t, h - LINTEL, s.alongX ? t : DOOR, wallHex, LINTEL);
+      addObstacle(s.cx, s.cz, s.alongX ? DOOR : t, h - LINTEL, s.alongX ? t : DOOR, wallHex, LINTEL, 'brick');
     } else {
-      addObstacle(s.cx, s.cz, s.alongX ? s.len : t, h, s.alongX ? t : s.len, wallHex);
+      addObstacle(s.cx, s.cz, s.alongX ? s.len : t, h, s.alongX ? t : s.len, wallHex, 0, 'brick');
     }
   });
   addObstacle(x, z, w, 0.25, d, 0x6e5844, h);   // dalle de toit praticable
   // Parapets 0.4 : cover sur le toit, franchissables au step-up
-  addObstacle(x, z + d / 2 - 0.12, w, 0.4, 0.24, wallHex, h + 0.25);
-  addObstacle(x, z - d / 2 + 0.12, w, 0.4, 0.24, wallHex, h + 0.25);
-  addObstacle(x + w / 2 - 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25);
-  addObstacle(x - w / 2 + 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25);
+  addObstacle(x, z + d / 2 - 0.12, w, 0.4, 0.24, wallHex, h + 0.25, 'brick');
+  addObstacle(x, z - d / 2 + 0.12, w, 0.4, 0.24, wallHex, h + 0.25, 'brick');
+  addObstacle(x + w / 2 - 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25, 'brick');
+  addObstacle(x - w / 2 + 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25, 'brick');
 }
+// Échelle : on grimpe en poussant VERS elle (n = normale de la face)
+const ladders = [];   // { minX, maxX, minZ, maxZ, topY, nx, nz }
+function addLadder(x, z, nx, nz, topY) {
+  // zone grimpable devant la face (profondeur 0.75)
+  ladders.push({
+    minX: x - (nx ? 0 : 0.65) - (nx < 0 ? 1.0 : 0), maxX: x + (nx ? 0 : 0.65) + (nx > 0 ? 1.0 : 0),
+    minZ: z - (nz ? 0 : 0.65) - (nz < 0 ? 1.0 : 0), maxZ: z + (nz ? 0 : 0.65) + (nz > 0 ? 1.0 : 0),
+    topY, nx: -nx, nz: -nz   // on pousse vers la tour = opposé de la normale
+  });
+  // visuel : 2 rails + barreaux (dans le décor fusionné, pas de collision)
+  const rx = x + nx * 0.06, rz = z + nz * 0.06;
+  const railW = nx ? 0.06 : 0.76, railD = nz ? 0.06 : 0.76;
+  for (const off of [-0.35, 0.35]) {
+    const gx = rx + (nx ? 0 : off), gz = rz + (nz ? 0 : off);
+    const geo = new THREE.BoxGeometry(0.06, topY - 0.3, 0.06);
+    scaleBoxUVs(geo, 0.06, topY - 0.3, 0.06);
+    geo.translate(gx, (topY - 0.3) / 2, gz);
+    staticParts.push({ geo, key: 'planks:' + 0x8a5a2b });
+  }
+  for (let y = 0.45; y < topY - 0.35; y += 0.45) {
+    const geo = new THREE.BoxGeometry(railW, 0.055, railD);
+    scaleBoxUVs(geo, railW, 0.055, railD);
+    geo.translate(rx, y, rz);
+    staticParts.push({ geo, key: 'planks:' + 0x8a5a2b });
+  }
+}
+function onLadder() {
+  for (const L of ladders) {
+    if (player.x > L.minX && player.x < L.maxX &&
+        player.z > L.minZ && player.z < L.maxZ && player.y < L.topY) return L;
+  }
+  return null;
+}
+
 function addRocks(x, z) {
   const n = 2 + Math.floor(rnd() * 3);
   for (let i = 0; i < n; i++) {
     const s = 0.7 + rnd() * 1.5;
     const shade = 0x84817a + Math.floor(rnd() * 4) * 0x040404;
     addObstacle(x + (rnd() - 0.5) * 3.4, z + (rnd() - 0.5) * 3.4,
-      s, 0.4 + rnd() * 1.8, s * (0.8 + rnd() * 0.5), shade);
+      s, 0.4 + rnd() * 1.8, s * (0.8 + rnd() * 0.5), shade, 0, 'stone');
   }
 }
 
@@ -629,10 +856,23 @@ addStairs(38.62, 26, -1, 0, 1.6, 3.25);
   addObstacle(tx - 1.68, tz, 0.24, 0.4, 3.6, 0x7a5c3a, 4.3);
   addStairs(tx + 1.8 + 6.3, tz, -1, 0, 1.6, 4.3);
 }
+// LA TOUR AU SNIPER : 7 m, accessible uniquement par l'échelle.
+// Au sommet : l'unique sniper de la map (50 balles). Hors zone finale : il faudra redescendre.
+{
+  const tx = -36, tz = -2;
+  addObstacle(tx, tz, 2.4, 7, 2.4, 0x8a7a66, 0, 'brick');            // fût plein
+  addObstacle(tx, tz, 3.4, 0.3, 3.4, 0x6e5844, 7, 'planks');         // plateforme
+  addObstacle(tx, tz + 1.58, 3.4, 0.4, 0.24, 0x7a5c3a, 7.3, 'planks');
+  addObstacle(tx, tz - 1.58, 3.4, 0.4, 0.24, 0x7a5c3a, 7.3, 'planks');
+  addObstacle(tx + 1.58, tz, 0.24, 0.4, 3.4, 0x7a5c3a, 7.3, 'planks');
+  addObstacle(tx - 1.58, tz, 0.24, 0.4, 3.4, 0x7a5c3a, 7.3, 'planks');
+  addLadder(tx + 1.2, tz, 1, 0, 8.1);                                 // échelle face est
+}
+
 // Conteneurs (toits praticables par escalier)
-addObstacle(-8, -36, 6, 2.5, 2.6, 0xa3653f);
+addObstacle(-8, -36, 6, 2.5, 2.6, 0xa3653f, 0, 'metal');
 addStairs(-14.78, -36, 1, 0, 1.6, 2.5);
-addObstacle(36, 3, 2.6, 2.5, 6, 0x6b7f8c);
+addObstacle(36, 3, 2.6, 2.5, 6, 0x6b7f8c, 0, 'metal');
 addStairs(36, -3.78, 0, 1, 1.6, 2.5);
 // Barricades : 0.8 m — cover bas, on peut sauter dessus
 for (const [bx, bz, alongX] of [[6, -12, 1], [-11, 4, 0], [2, 13, 1], [-18, -8, 1],
@@ -657,18 +897,13 @@ for (let i = 0; i < 22; i++) {
   const [x, z] = decorSpot();
   const shade = 0x8a6a44 + Math.floor(rnd() * 3) * 0x060402;
   addObstacle(x, z, 1.2, 1.2, 1.2, shade);
-  if (rnd() < 0.3) {   // pile de 2
-    const top = new THREE.Mesh(GEO_BOX, new THREE.MeshLambertMaterial({ color: 0x9a744c }));
-    top.scale.set(1.1, 1.1, 1.1);
-    top.position.set(x, 1.2 + 0.55, z);
-    scene.add(top);
-    obstacleMeshes.push(top);
-  }
+  if (rnd() < 0.3) addObstacle(x, z, 1.1, 1.1, 1.1, 0x9a744c, 1.2);   // pile de 2
 }
 for (let i = 0; i < 14; i++) {
   const [x, z] = decorSpot();
-  addObstacle(x, z, 1.4, 1.0, 1.4, 0x51683c);
+  addObstacle(x, z, 1.4, 1.0, 1.4, 0x51683c, 0, 'leaf');
 }
+buildStaticDecor();   // fusion : tout le décor statique en ~12 draw calls ombrés
 
 // ---------- S5. FABRIQUE DE PERSONNAGES BLOCKY ----------
 // Géométrie unitaire partagée + cache de matériaux : ~15 matériaux au total.
@@ -731,6 +966,9 @@ function buildCharacter(attrs) {
   headBox.scale.set(0.58, 0.8, 0.58);
   headBox.position.y = 1.7;
   group.add(headBox);
+
+  // Ombre : seulement les 3 gros blocs (3× moins de casters, visuel identique)
+  meshes[0].castShadow = meshes[1].castShadow = meshes[2].castShadow = true;
 
   return { group, meshes, hitbox, headBox };
 }
@@ -875,7 +1113,7 @@ const player = {
   vx: 0, vy: 0, vz: 0,
   yaw: 0, pitch: 0,
   hp: PLAYER_MAX_HP, down: false, downUntil: 0, shake: 0,
-  slideV0: 8.8, stepAcc: 0, roll: 0, camDip: 0,
+  slideV0: 8.8, stepAcc: 0, roll: 0, camDip: 0, adsT: 0,
   grounded: true,
   sliding: false, slideUntil: 0, slideCdUntil: 0, slideDirX: 0, slideDirZ: 0,
   eyeH: EYE, recoil: 0, bobPhase: 0
@@ -917,6 +1155,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Digit2') selectWeapon('rifle');
   if (e.code === 'Digit3') selectWeapon('shotgun');
   if (e.code === 'Digit4') selectWeapon('rocket');
+  if (e.code === 'Digit5') selectWeapon('sniper');
   if (e.code === 'KeyR' && !e.repeat) startReload();
   if (e.code === 'KeyF' && !e.repeat) startHeal();
 });
@@ -942,12 +1181,21 @@ addEventListener('mousemove', (e) => {
   if (!G.locked) return;
   vmSwayX = Math.max(-0.04, Math.min(0.04, vmSwayX - e.movementX * 0.00035));
   vmSwayY = Math.max(-0.03, Math.min(0.03, vmSwayY + e.movementY * 0.00025));
-  player.yaw -= e.movementX * SENS;
-  player.pitch -= e.movementY * SENS;
+  const zoomSens = SENS * (camera.fov / 75);   // sensibilité réduite au zoom
+  player.yaw -= e.movementX * zoomSens;
+  player.pitch -= e.movementY * zoomSens;
   player.pitch = Math.max(-1.48, Math.min(1.48, player.pitch));
 });
-addEventListener('mousedown', (e) => { if (e.button === 0 && G.locked) G.mouseHeld = true; });
-addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseHeld = false; });
+addEventListener('mousedown', (e) => {
+  if (!G.locked) return;
+  if (e.button === 0) G.mouseHeld = true;
+  if (e.button === 2 && !G.whipArmed) G.adsHeld = true;   // clic droit = viser
+});
+addEventListener('mouseup', (e) => {
+  if (e.button === 0) G.mouseHeld = false;
+  if (e.button === 2) G.adsHeld = false;
+});
+addEventListener('contextmenu', (e) => e.preventDefault());
 
 function collidePlayer() {
   const feet = player.y;
@@ -1027,6 +1275,10 @@ function updatePlayer(dt) {
     player.slideCdUntil = G.now + SLIDE_CD;
   }
 
+  // Visée (clic droit) : transition douce, marche ralentie, zoom
+  const adsGoal = (G.adsHeld && !G.whipArmed && !player.down && G.locked) ? 1 : 0;
+  player.adsT += (adsGoal - player.adsT) * Math.min(1, 14 * dt);
+
   let targetVX, targetVZ;
   if (player.sliding) {
     const t = 1 - (player.slideUntil - G.now) / (SLIDE_TIME * 1000);
@@ -1036,6 +1288,7 @@ function updatePlayer(dt) {
   } else {
     let sp = wantSprint ? SPRINT_SPEED : WALK_SPEED;
     if (G.healing) sp *= 0.5;   // soin canalisé : vitesse ×0.5, comme en 2D
+    sp *= 1 - 0.45 * player.adsT;   // en visée : on marche
     targetVX = dirX * sp;
     targetVZ = dirZ * sp;
   }
@@ -1060,6 +1313,21 @@ function updatePlayer(dt) {
     const sNow = Math.hypot(player.vx, player.vz);
     const cap = Math.max(speed0, WALK_SPEED);
     if (sNow > cap) { player.vx *= cap / sNow; player.vz *= cap / sNow; }
+  }
+
+  // Échelle : pousser vers elle = grimper ; sinon on glisse doucement
+  const lad = onLadder();
+  if (lad && !player.down) {
+    const into = len > 0 && (dirX * lad.nx + dirZ * lad.nz) > 0.4;
+    if (into) {
+      player.vy = 3.2 + GRAVITY * dt;   // compense la gravité appliquée plus bas
+      player.vx = dirX * 0.8;
+      player.vz = dirZ * 0.8;
+      player.grounded = false;
+      player.sliding = false;
+    } else if (!player.grounded && player.vy < -2.2) {
+      player.vy = -2.2;                 // agrippé : descente contrôlée
+    }
   }
 
   player.x += player.vx * dt;
@@ -1100,9 +1368,11 @@ function updatePlayer(dt) {
   player.camDip *= Math.exp(-7 * dt);
   const targetRoll = -s * 0.025 - (player.sliding ? 0.045 : 0);
   player.roll += (targetRoll - player.roll) * Math.min(1, 10 * dt);
-  const targetFov = 75 + Math.min(1.6, speed / SPRINT_SPEED) * 5 + (player.sliding ? 5 : 0);
+  const hipFov = 75 + Math.min(1.6, speed / SPRINT_SPEED) * 5 + (player.sliding ? 5 : 0);
+  const adsFov = WEAPONS[G.currentWeapon].adsFov || 58;
+  const targetFov = hipFov * (1 - player.adsT) + adsFov * player.adsT;
   if (Math.abs(camera.fov - targetFov) > 0.05) {
-    camera.fov += (targetFov - camera.fov) * Math.min(1, 8 * dt);
+    camera.fov += (targetFov - camera.fov) * Math.min(1, 10 * dt);
     camera.updateProjectionMatrix();
   }
 
@@ -1154,16 +1424,68 @@ function ejectShell() {   // douille éjectée à droite
     rz * (1 + Math.random()) + (Math.random() - 0.5), brassMat, 0.03, false);
 }
 
-const VIEWMODELS = {   // [w, h, d, hex, x, y, z] par bloc
-  pistol:  [[0.07, 0.07, 0.26, 0x4a4239, 0, 0.02, -0.1], [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0]],
-  whip:    [[0.06, 0.18, 0.06, 0x57493a, 0, -0.04, 0], [0.05, 0.05, 0.2, 0x8a5a2b, 0, 0.04, -0.1],
-            [0.04, 0.14, 0.04, 0x8a5a2b, 0.01, -0.02, -0.22], [0.035, 0.1, 0.035, 0x8a5a2b, 0.03, -0.12, -0.26]],
-  rifle:   [[0.07, 0.07, 0.5, 0x3f3a30, 0, 0.02, -0.2], [0.05, 0.05, 0.12, 0x2c2620, 0, 0.08, -0.32],
-            [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0.02]],
-  shotgun: [[0.09, 0.09, 0.42, 0x6e4a2f, 0, 0.02, -0.16], [0.07, 0.07, 0.16, 0x3f3a30, 0, -0.05, -0.2],
-            [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0.04]],
-  rocket:  [[0.13, 0.13, 0.5, 0x5a6247, 0, 0.03, -0.18], [0.14, 0.14, 0.08, 0xc75b4a, 0, 0.03, -0.44],
-            [0.06, 0.12, 0.08, 0x57493a, 0, -0.08, 0.06]]
+const VIEWMODELS = {   // [w, h, d, hex, x, y, z] par bloc — organes de visée alignés en ADS
+  pistol: [
+    [0.07, 0.075, 0.28, 0x4a4239, 0, 0.035, -0.12],    // culasse
+    [0.05, 0.05, 0.06, 0x2c2620, 0, 0.03, -0.29],      // bouche
+    [0.065, 0.05, 0.2, 0x57493a, 0, -0.005, -0.08],    // carcasse
+    [0.06, 0.14, 0.09, 0x3a332b, 0, -0.09, 0],         // poignée
+    [0.015, 0.02, 0.07, 0x2c2620, 0, -0.045, -0.06],   // pontet
+    [0.012, 0.025, 0.02, 0x181818, -0.018, 0.085, 0],  // hausse G
+    [0.012, 0.025, 0.02, 0x181818, 0.018, 0.085, 0],   // hausse D
+    [0.012, 0.03, 0.02, 0x181818, 0, 0.085, -0.27]     // guidon
+  ],
+  rifle: [
+    [0.07, 0.09, 0.34, 0x3f3a30, 0, 0.02, -0.05],      // boîtier
+    [0.045, 0.045, 0.34, 0x2c2620, 0, 0.035, -0.36],   // canon
+    [0.06, 0.06, 0.2, 0x57493a, 0, 0, -0.25],          // garde-main
+    [0.05, 0.13, 0.09, 0x2c2620, 0, -0.08, -0.02],     // chargeur
+    [0.05, 0.12, 0.08, 0x3a332b, 0, -0.09, 0.1],       // poignée
+    [0.055, 0.08, 0.18, 0x57493a, 0, 0, 0.2],          // crosse
+    [0.012, 0.035, 0.02, 0x181818, 0, 0.075, -0.5],    // guidon
+    [0.012, 0.03, 0.02, 0x181818, -0.018, 0.075, 0.02],
+    [0.012, 0.03, 0.02, 0x181818, 0.018, 0.075, 0.02]
+  ],
+  shotgun: [
+    [0.055, 0.055, 0.42, 0x3f3a30, 0, 0.035, -0.28],   // canon
+    [0.045, 0.045, 0.36, 0x2c2620, 0, -0.015, -0.26],  // tube
+    [0.075, 0.06, 0.14, 0x6e4a2f, 0, -0.02, -0.3],     // pompe
+    [0.07, 0.08, 0.18, 0x6e4a2f, 0, 0.01, -0.02],      // boîtier
+    [0.055, 0.1, 0.2, 0x57493a, 0, -0.04, 0.14],       // crosse
+    [0.014, 0.02, 0.02, 0xd8b25a, 0, 0.075, -0.47]     // grain d'orge
+  ],
+  rocket: [
+    [0.13, 0.13, 0.55, 0x5a6247, 0, 0.04, -0.15],      // tube
+    [0.145, 0.145, 0.09, 0xc75b4a, 0, 0.04, -0.44],    // ogive
+    [0.11, 0.11, 0.06, 0x2c2620, 0, 0.04, 0.14],       // tuyère
+    [0.05, 0.12, 0.08, 0x3a332b, 0, -0.07, -0.02],     // poignée
+    [0.015, 0.06, 0.02, 0x181818, 0, 0.13, -0.1]       // viseur
+  ],
+  sniper: [
+    [0.045, 0.045, 0.6, 0x2c2620, 0, 0.03, -0.5],      // canon long
+    [0.065, 0.085, 0.3, 0x3f3a30, 0, 0.02, -0.1],      // boîtier
+    [0.05, 0.05, 0.22, 0x181818, 0, 0.115, -0.08],     // lunette
+    [0.065, 0.065, 0.04, 0x181818, 0, 0.115, -0.2],
+    [0.065, 0.065, 0.04, 0x181818, 0, 0.115, 0.03],
+    [0.055, 0.09, 0.22, 0x57493a, 0, -0.005, 0.2],     // crosse
+    [0.05, 0.12, 0.07, 0x3a332b, 0, -0.09, 0.09],      // poignée
+    [0.02, 0.02, 0.08, 0xd8b25a, 0.05, 0.04, 0]        // levier
+  ],
+  whip: [
+    [0.06, 0.18, 0.06, 0x57493a, 0, -0.04, 0],
+    [0.05, 0.05, 0.2, 0x8a5a2b, 0, 0.04, -0.1],
+    [0.04, 0.14, 0.04, 0x8a5a2b, 0.01, -0.02, -0.22],
+    [0.035, 0.1, 0.035, 0x8a5a2b, 0.03, -0.12, -0.26]
+  ]
+};
+// Pose de visée : l'arme au centre, la ligne de mire sous le crosshair
+const ADS_POSE = {
+  pistol:  { x: 0, y: -0.066, z: -0.42 },
+  rifle:   { x: 0, y: -0.06, z: -0.36 },
+  shotgun: { x: 0, y: -0.058, z: -0.34 },
+  rocket:  { x: 0, y: -0.1, z: -0.34 },
+  sniper:  { x: 0, y: -0.085, z: -0.3 },
+  whip:    { x: 0.3, y: -0.26, z: -0.55 }
 };
 function buildViewmodel(key) {
   while (viewmodel.children.length) viewmodel.remove(viewmodel.children[0]);
@@ -1255,8 +1577,9 @@ function shoot() {
   if (w.explosive) {
     fireRocket(muzzle);
   } else {
-    // Bloom : précis immobile, dispersé en courant, très dispersé en l'air
-    const spread = w.spread * currentBloom();
+    // Bloom : précis immobile, dispersé en courant, très dispersé en l'air.
+    // Sniper à la lunette : quasi parfait — c'est toute sa raison d'être.
+    const spread = (w.scoped && player.adsT > 0.75) ? 0.002 : w.spread * currentBloom();
     let scared = false;
     for (let i = 0; i < w.pellets; i++) {
       const dir = spreadDir(spread);
@@ -1288,7 +1611,8 @@ function shoot() {
 // Facteur de dispersion selon le mouvement + le spray en cours
 function currentBloom() {
   const speed = Math.hypot(player.vx, player.vz);
-  return 0.5 + (speed / SPRINT_SPEED) * 1.5 + (player.grounded ? 0 : 1.8) + G.spray * 0.15;
+  const b = 0.5 + (speed / SPRINT_SPEED) * 1.5 + (player.grounded ? 0 : 1.8) + G.spray * 0.15;
+  return b * (1 - 0.68 * player.adsT);   // viser resserre la gerbe
 }
 // Hitmarker : la confirmation visuelle + sonore de la touche
 function showHitmark(type) {
@@ -1512,6 +1836,7 @@ function aimedNpc() {
 function toggleWhip() {
   if (!G.finalPhase || G.gameOver || G.tying || !G.locked || player.down || !G.started) return;
   G.whipArmed = !G.whipArmed;
+  G.adsHeld = false;
   buildViewmodel(G.whipArmed ? 'whip' : G.currentWeapon);
   sfx('whip', 0.5);
 }
@@ -1890,6 +2215,7 @@ function respawnPlayer() {
 const healBar = $('healBar');
 const reloadBar = $('reloadBar');
 const crosshairEl = $('crosshair');
+const scopeEl = $('scope');
 function selectWeapon(key) {
   if (!G.weapons[key].owned) return;
   cancelReload();
@@ -1945,9 +2271,10 @@ const LOOT_STYLE = {   // indicateur flottant au-dessus de la caisse
   rifle:   { hex: 0x3f3a30, w: 0.5,  h: 0.14, d: 0.14 },
   shotgun: { hex: 0x6e4a2f, w: 0.42, h: 0.16, d: 0.16 },
   rocket:  { hex: 0xc75b4a, w: 0.18, h: 0.18, d: 0.5 },
+  sniper:  { hex: 0x2e2a24, w: 0.14, h: 0.14, d: 0.85 },
   medkit:  { hex: 0xf0ede4, w: 0.4,  h: 0.22, d: 0.4 }
 };
-function spawnPickup(type, x, z, ammo) {
+function spawnPickup(type, x, z, ammo, ly = 0) {
   x = Math.max(-HALF, Math.min(HALF, x));
   z = Math.max(-HALF, Math.min(HALF, z));
   const g = new THREE.Group();
@@ -1958,6 +2285,8 @@ function spawnPickup(type, x, z, ammo) {
   const item = new THREE.Mesh(GEO_BOX, getMat(st.hex));
   item.scale.set(st.w, st.h, st.d);
   item.position.y = 0.62;
+  base.castShadow = true;
+  item.castShadow = true;
   g.add(base, item);
   if (type === 'medkit') {   // croix rouge
     const c1 = new THREE.Mesh(GEO_BOX, getMat(0xc75b4a));
@@ -1966,9 +2295,9 @@ function spawnPickup(type, x, z, ammo) {
     c2.scale.set(0.1, 0.06, 0.3); c2.position.y = 0.77;
     g.add(c1, c2);
   }
-  g.position.set(x, 0, z);
+  g.position.set(x, ly, z);
   scene.add(g);
-  G.loot.push({ type, x, z, ammo: ammo ?? AMMO_PACK[type], group: g, item });
+  G.loot.push({ type, x, z, y: ly, ammo: ammo ?? AMMO_PACK[type], group: g, item });
 }
 function spawnInitialLoot() {
   for (const [type, count] of Object.entries(LOOT_COUNTS)) {
@@ -2015,15 +2344,15 @@ function updateLoot(dt) {
   for (let i = G.loot.length - 1; i >= 0; i--) {
     const l = G.loot[i];
     l.item.rotation.y += dt * 2;
-    l.item.position.y = 0.62 + Math.sin(G.now / 400 + i) * 0.05;
-    if (!player.down && player.y < 1.5 &&
+    l.item.position.y = 0.62 + Math.sin(G.now / 400 + i) * 0.05;   // (local au groupe)
+    if (!player.down && Math.abs(player.y - l.y) < 2 &&
         Math.hypot(player.x - l.x, player.z - l.z) < 1.3) pickupLoot(l, i);
   }
 }
 function dropPlayerEquipment() {
   const drop = (type, ammo) => spawnPickup(type,
     player.x + (Math.random() - 0.5) * 3, player.z + (Math.random() - 0.5) * 3, ammo);
-  for (const t of ['rifle', 'shotgun', 'rocket']) {
+  for (const t of ['rifle', 'shotgun', 'rocket', 'sniper']) {
     const st = G.weapons[t];
     const total = st.ammo + st.mag;
     if (st.owned && total > 0) drop(t, total);
@@ -2062,6 +2391,7 @@ function buildBotCharacter(def) {
   headBox.scale.set(0.58, 0.8, 0.58);
   headBox.position.y = 1.7;
   group.add(headBox);
+  meshes[0].castShadow = meshes[1].castShadow = meshes[2].castShadow = true;
   return { group, meshes, hitbox, headBox };
 }
 function spawnBot(def, idx) {
@@ -2584,6 +2914,7 @@ document.addEventListener('pointerlockchange', () => {
     hud.style.display = 'block';
   } else {
     G.mouseHeld = false;
+    G.adsHeld = false;
     cancelTie();
     if (G.started && !G.gameOver) $('pauseOverlay').style.display = 'flex';
   }
@@ -2598,6 +2929,7 @@ function startGame() {
   G.culpritAttrs = culprit.attrs;
   initCluePool();
   spawnInitialLoot();
+  spawnPickup('sniper', -36, -2, SNIPER_TOTAL, 7.3);   // l'unique sniper (50 balles)
   BOT_DEFS.forEach((def, i) => spawnBot(def, i));
   rebuildTargets();
   updateHud();
@@ -2669,13 +3001,22 @@ function animate() {
     vmSwayX *= Math.exp(-8 * dt);
     vmSwayY *= Math.exp(-8 * dt);
     const strafeV = player.vx * Math.cos(player.yaw) - player.vz * Math.sin(player.yaw);
-    viewmodel.position.x = 0.3 + vmSwayX + strafeV * 0.004;
-    viewmodel.position.y = -0.26 + vmSwayY - player.camDip * 0.4 +
-      Math.sin(player.bobPhase * 2) * 0.01 * Math.min(1, Math.hypot(player.vx, player.vz) / WALK_SPEED);
-    viewmodel.position.z = -0.55 + vmKick * 0.06;
-    viewmodel.rotation.x = vmKick * 0.12 + vmSwayY * 1.2;
-    viewmodel.rotation.y = vmSwayX * 1.2;
-    viewmodel.rotation.z = -strafeV * 0.006;
+    const a = player.adsT, ia = 1 - a;
+    const pose = ADS_POSE[G.whipArmed ? 'whip' : G.currentWeapon] || ADS_POSE.pistol;
+    const bobY = Math.sin(player.bobPhase * 2) * 0.01 *
+      Math.min(1, Math.hypot(player.vx, player.vz) / WALK_SPEED);
+    viewmodel.position.x = (0.3 + strafeV * 0.004) * ia + pose.x * a + vmSwayX * (1 - a * 0.7);
+    viewmodel.position.y = (-0.26 + bobY) * ia + pose.y * a +
+      vmSwayY * (1 - a * 0.7) - player.camDip * 0.4;
+    viewmodel.position.z = -0.55 * ia + pose.z * a + vmKick * 0.06;
+    viewmodel.rotation.x = vmKick * 0.12 + vmSwayY * 1.2 * ia;
+    viewmodel.rotation.y = vmSwayX * 1.2 * ia;
+    viewmodel.rotation.z = -strafeV * 0.006 * ia;
+    // Lunette du sniper : plein zoom = overlay, arme masquée, crosshair masqué
+    const scoped = !G.whipArmed && WEAPONS[G.currentWeapon].scoped && a > 0.75;
+    viewmodel.visible = !scoped;
+    scopeEl.style.display = scoped ? 'block' : 'none';
+    crosshairEl.style.visibility = scoped ? 'hidden' : 'visible';
     muzzleMesh.visible = performance.now() < muzzleUntil;
     // Crosshair dynamique : l'écartement AFFICHE ta précision du moment
     crosshairEl.style.setProperty('--gap', (4 + currentBloom() * 9).toFixed(1) + 'px');
@@ -2689,7 +3030,13 @@ function animate() {
   updateExplosions();
   updateParticles(dt);
   if (bloodDirty) { bloodTex.needsUpdate = true; bloodDirty = false; }
-  renderer.render(scene, camera);
+  // Le dôme de ciel et la caméra d'ombre suivent le joueur
+  skyDome.position.copy(camera.position);
+  const sx = Math.round(player.x), sz = Math.round(player.z);
+  sun.position.set(sx + 45, 60, sz + 27);
+  sun.target.position.set(sx, 0, sz);
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 animate();
 </script>
