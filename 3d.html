@@ -39,13 +39,24 @@
   #npcBox b { color: #ffe08a; }
 
   /* Crosshair */
-  #crosshair { position: absolute; top: 50%; left: 50%; width: 22px; height: 22px;
-               transform: translate(-50%,-50%); }
-  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,.92); }
-  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%);
-                       clip-path: polygon(0 0, 100% 0, 100% 32%, 0 32%, 0 68%, 100% 68%, 100% 100%, 0 100%); }
-  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%);
-                       clip-path: polygon(0 0, 32% 0, 32% 100%, 0 100%, 68% 0, 100% 0, 100% 100%, 68% 100%); }
+  #crosshair { position: absolute; top: 50%; left: 50%; --gap: 5px; }
+  #crosshair i { position: absolute; background: rgba(255,255,255,.92); }
+  #crosshair .t { width: 2px; height: 7px; left: -1px; bottom: var(--gap); }
+  #crosshair .b { width: 2px; height: 7px; left: -1px; top: var(--gap); }
+  #crosshair .l { height: 2px; width: 7px; top: -1px; right: var(--gap); }
+  #crosshair .r { height: 2px; width: 7px; top: -1px; left: var(--gap); }
+  #crosshair .c { width: 2px; height: 2px; left: -1px; top: -1px; }
+  #hitmark { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(45deg);
+             font: 700 30px monospace; color: #fff; opacity: 0; transition: opacity .12s;
+             text-shadow: 0 0 5px rgba(0,0,0,.6); pointer-events: none; }
+  #hitmark.head { color: #ffe08a; }
+  #hitmark.kill { color: #ff6a55; font-size: 38px; }
+  #reloadBar { position: absolute; top: 58%; left: 50%; transform: translateX(-50%);
+               width: 140px; height: 8px; background: rgba(0,0,0,.55);
+               border: 2px solid #ffe08a; border-radius: 5px; display: none; }
+  #reloadBar > div { height: 100%; width: 0%; background: #ffe08a; }
+  #reloadBar .lbl { position: absolute; top: -18px; width: 100%; text-align: center;
+                    color: #ffe08a; font-size: 11px; font-family: Arial, sans-serif; }
 
   #accusePrompt { position: absolute; top: 56%; left: 50%; transform: translateX(-50%);
                   color: #ffe08a; font-size: 16px; text-shadow: 2px 2px 0 rgba(0,0,0,.5); display: none; }
@@ -144,7 +155,9 @@
   <div id="cluesBox" class="panel"><div class="h">INDICES</div><ul id="cluesList"><li style="color:#9fb086">Aucun indice pour l'instant…</li></ul></div>
   <div id="npcBox" class="panel"><b id="cAlive">120</b> passants • <b id="cExcl">0</b> exclus restants • <b id="cSusp">120</b> suspects • <b id="cBots">3/3</b> bots</div>
   <div id="lb" class="panel"><div class="h">CLASSEMENT</div><div id="lbLines"></div></div>
-  <div id="crosshair"></div>
+  <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="c"></i></div>
+  <div id="hitmark">+</div>
+  <div id="reloadBar"><div></div><span class="lbl">RECHARGEMENT…</span></div>
   <div id="accusePrompt">Maintenir <b>E</b> — ACCUSER</div>
   <div id="tieBar"><div></div><span class="lbl">LIGOTAGE — immobile, clic maintenu !</span></div>
   <div id="zoneVignette"></div>
@@ -155,7 +168,7 @@
     <div class="slot off" data-w="rifle"><span class="k">2</span><span class="n">Fusil</span><span class="a">0</span></div>
     <div class="slot off" data-w="shotgun"><span class="k">3</span><span class="n">Pompe</span><span class="a">0</span></div>
     <div class="slot off" data-w="rocket"><span class="k">4</span><span class="n">Roquette</span><span class="a">0</span></div>
-    <div class="slot off" data-w="medkit"><span class="k">R</span><span class="n">Medkit</span><span class="a">×0</span></div>
+    <div class="slot off" data-w="medkit"><span class="k">F</span><span class="n">Medkit</span><span class="a">×0</span></div>
   </div>
   <div id="healBar"><div></div></div>
   <div id="downOverlay"><div class="d1">ÉLIMINÉ PAR LA ZONE !</div>
@@ -170,7 +183,7 @@
      <b>accuse le coupable</b> — de près, sans bouger, pendant 5 secondes.</p>
   <div class="controls">
     ZQSD / WASD — se déplacer &nbsp;•&nbsp; Souris — viser / tirer &nbsp;•&nbsp; 1-4 / molette — armes<br>
-    Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; R — medkit &nbsp;•&nbsp; E — fouet (finale)<br>
+    Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; R — recharger &nbsp;•&nbsp; F — medkit &nbsp;•&nbsp; E — fouet (finale)<br>
     Échap — pause &nbsp;•&nbsp; <i>Desktop uniquement</i>
   </div>
   <button class="btn" id="startBtn">CLIQUE POUR JOUER</button>
@@ -245,14 +258,16 @@ const SENS = 0.0022;               // rad / px souris
 const PLAYER_R = 0.35;             // rayon de collision
 const PLAYER_H = 1.7;              // hauteur de collision
 const STEP_UP = 0.42;              // rebord franchissable sans sauter (marches, parapets)
+const AIR_ACCEL = 20;              // contrôle aérien (m/s²) — on infléchit, on n'accélère pas
 
 // Arsenal — port du 2D, distances en mètres (×140/2200), tir raycast hitscan
 const WEAPONS = {
-  pistol:  { name: 'Pistolet', dmg: 12, cd: 400,  pellets: 1, spread: 0.03, infinite: true, kick: 0.016, snd: 'pistol' },
-  rifle:   { name: 'Fusil',    dmg: 12, cd: 150,  pellets: 1, spread: 0.05, kick: 0.010, snd: 'rifle' },
-  shotgun: { name: 'Pompe',    dmg: 8,  cd: 900,  pellets: 5, spread: 0.45, range: 16, kick: 0.035, snd: 'shotgun' },
-  rocket:  { name: 'Roquette', dmg: 60, cd: 1200, explosive: true, radius: 5.7, speed: 26.7, life: 1600, kick: 0.030, snd: 'rocket' }
+  pistol:  { name: 'Pistolet', dmg: 12, cd: 400,  pellets: 1, spread: 0.03, infinite: true, kick: 0.012, snd: 'pistol', mag: 12, reload: 1100 },
+  rifle:   { name: 'Fusil',    dmg: 12, cd: 150,  pellets: 1, spread: 0.05, kick: 0.009, snd: 'rifle', mag: 25, reload: 1600 },
+  shotgun: { name: 'Pompe',    dmg: 8,  cd: 900,  pellets: 5, spread: 0.45, range: 16, kick: 0.030, snd: 'shotgun', mag: 6, reload: 2000 },
+  rocket:  { name: 'Roquette', dmg: 60, cd: 1200, explosive: true, radius: 5.7, speed: 26.7, life: 1600, kick: 0.020, snd: 'rocket', mag: 1, reload: 1500 }
 };
+const HEADSHOT_MULT = 2;           // le skill de visée : la tête paie double
 const WEAPON_ORDER = ['pistol', 'rifle', 'shotgun', 'rocket'];
 const AMMO_PACK = { rifle: 30, shotgun: 12, rocket: 1 };
 const MEDKIT_HEAL = 50;
@@ -286,7 +301,7 @@ const BOT_HP = 60;
 const BOT_SPEED = 4.5;             // 200 px/s (joueur 230 → 5.2 m/s)
 const BOT_VIEW = 24;               // 380 px : distance de détection du joueur
 const BOT_FIRE_CD = 450;
-const BOT_BULLET_SPEED = 24;       // dodgeable, ratio proche du 2D
+const BOT_BULLET_SPEED = 68;       // lisible comme une balle, esquivable à distance
 const BOT_BULLET_DMG = 10;
 const SCORE_BOT = 50;
 const BOT_TIE_ERROR = 0.25;        // 25 % : le bot "lit mal" et ligote un exclu
@@ -319,13 +334,14 @@ const G = {
   tying: null,                  // { npc, start }
   whipArmed: false, whipCdUntil: 0,
   nextFireAt: 0, mouseHeld: false,
-  weapons: {
-    pistol:  { owned: true,  ammo: Infinity },
-    rifle:   { owned: false, ammo: 0 },
-    shotgun: { owned: false, ammo: 0 },
-    rocket:  { owned: false, ammo: 0 }
+  weapons: {   // ammo = réserve, mag = chargeur courant
+    pistol:  { owned: true,  ammo: Infinity, mag: 12 },
+    rifle:   { owned: false, ammo: 0, mag: 0 },
+    shotgun: { owned: false, ammo: 0, mag: 0 },
+    rocket:  { owned: false, ammo: 0, mag: 0 }
   },
   currentWeapon: 'pistol', medkits: 0, healing: null,
+  reloading: null, spray: 0,
   loot: [], bots: [], spawnPoints: [],
   sfxCtx: null
 };
@@ -369,9 +385,22 @@ function volAt(x, z) {
 }
 function sfx(name, vol = 1) {
   switch (name) {
-    case 'pistol': tone(240, 70, 0.09, 'square', 0.12 * vol); break;
-    case 'rifle':  tone(190, 60, 0.06, 'square', 0.10 * vol); break;
-    case 'shotgun':noise(0.18, 0.30 * vol, 900); tone(120, 40, 0.15, 'square', 0.10 * vol); break;
+    case 'pistol': { const v = 0.9 + Math.random() * 0.2;
+                   tone(240 * v, 70, 0.09, 'square', 0.12 * vol);
+                   noise(0.05, 0.08 * vol, 2400); break; }
+    case 'rifle':  { const v = 0.9 + Math.random() * 0.2;
+                   tone(190 * v, 60, 0.06, 'square', 0.10 * vol);
+                   noise(0.04, 0.07 * vol, 3000); break; }
+    case 'shotgun': { const v = 0.9 + Math.random() * 0.2;
+                   noise(0.18, 0.30 * vol, 900); tone(120 * v, 40, 0.15, 'square', 0.10 * vol); break; }
+    case 'hit':    tone(1150, 900, 0.045, 'square', 0.09 * vol); break;
+    case 'headshot': tone(1600, 1600, 0.08, 'triangle', 0.16 * vol); break;
+    case 'kill':   tone(520, 240, 0.12, 'square', 0.15 * vol); break;
+    case 'step':   noise(0.05, 0.05 * vol, 700); break;
+    case 'land':   noise(0.12, 0.2 * vol, 300); tone(140, 60, 0.1, 'sine', 0.12 * vol); break;
+    case 'reload': tone(700, 500, 0.05, 'square', 0.1 * vol);
+                   setTimeout(() => tone(900, 700, 0.05, 'square', 0.1 * vol), 150); break;
+    case 'click':  tone(300, 300, 0.03, 'square', 0.08 * vol); break;
     case 'rocket': tone(110, 30, 0.35, 'sawtooth', 0.16 * vol); noise(0.3, 0.10 * vol, 500); break;
     case 'explosion': noise(0.5, 0.5 * vol, 400); tone(90, 25, 0.5, 'sine', 0.35 * vol); break;
     case 'pickup': tone(660, 660, 0.06, 'sine', 0.15 * vol);
@@ -693,13 +722,17 @@ function buildCharacter(attrs) {
     block(group, meshes, 0.46, 0.3, 0.46, 0x8a6a44, 0, 2.2, 0);
   }
 
-  // Hitbox invisible pour le raycast de tir
+  // Hitbox invisibles : corps + TÊTE (headshot ×2 — le skill de visée)
   const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  hitbox.scale.set(0.75, 2.1, 0.55);
-  hitbox.position.y = 1.05;
+  hitbox.scale.set(0.75, 1.32, 0.55);
+  hitbox.position.y = 0.66;
   group.add(hitbox);
+  const headBox = new THREE.Mesh(GEO_BOX, hitboxMat);
+  headBox.scale.set(0.58, 0.8, 0.58);
+  headBox.position.y = 1.7;
+  group.add(headBox);
 
-  return { group, meshes, hitbox };
+  return { group, meshes, hitbox, headBox };
 }
 
 // ---------- S6. LOGIQUE DE DÉDUCTION (port de 2d.html L318-325, 514-549, 734-837) ----------
@@ -726,16 +759,18 @@ function spawnNpc() {
     tries++;
   } while ((Math.hypot(x, z) < SPAWN_CLEAR_R || footprintBlocked(x, z, 0.5)) && tries < 40);
 
-  const { group, meshes, hitbox } = buildCharacter(attrs);
+  const { group, meshes, hitbox, headBox } = buildCharacter(attrs);
   group.position.set(x, 0, z);
   scene.add(group);
 
   const npc = {
     attrs, hp: NPC_HP, isCulprit: false, dead: false,
     x, z, vx: 0, vz: 0, nextThink: 0, walkPhase: Math.random() * 10,
-    group, meshes, hitbox, flashUntil: 0
+    group, meshes, hitbox, headBox, flashUntil: 0
   };
   hitbox.userData.npc = npc;
+  headBox.userData.npc = npc;
+  headBox.userData.head = true;
   return npc;
 }
 
@@ -840,6 +875,7 @@ const player = {
   vx: 0, vy: 0, vz: 0,
   yaw: 0, pitch: 0,
   hp: PLAYER_MAX_HP, down: false, downUntil: 0, shake: 0,
+  slideV0: 8.8, stepAcc: 0, roll: 0, camDip: 0,
   grounded: true,
   sliding: false, slideUntil: 0, slideCdUntil: 0, slideDirX: 0, slideDirZ: 0,
   eyeH: EYE, recoil: 0, bobPhase: 0
@@ -881,7 +917,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Digit2') selectWeapon('rifle');
   if (e.code === 'Digit3') selectWeapon('shotgun');
   if (e.code === 'Digit4') selectWeapon('rocket');
-  if (e.code === 'KeyR' && !e.repeat) startHeal();
+  if (e.code === 'KeyR' && !e.repeat) startReload();
+  if (e.code === 'KeyF' && !e.repeat) startHeal();
 });
 addEventListener('wheel', (e) => {
   if (!G.locked || player.down || G.gameOver) return;
@@ -903,6 +940,8 @@ function moveInput() {
 
 addEventListener('mousemove', (e) => {
   if (!G.locked) return;
+  vmSwayX = Math.max(-0.04, Math.min(0.04, vmSwayX - e.movementX * 0.00035));
+  vmSwayY = Math.max(-0.03, Math.min(0.03, vmSwayY + e.movementY * 0.00025));
   player.yaw -= e.movementX * SENS;
   player.pitch -= e.movementY * SENS;
   player.pitch = Math.max(-1.48, Math.min(1.48, player.pitch));
@@ -961,6 +1000,7 @@ function updatePlayer(dt) {
     camera.position.set(player.x, player.y + player.eyeH, player.z);
     camera.rotation.y = player.yaw;
     camera.rotation.x = player.pitch;
+    camera.rotation.z = 0;
     return;
   }
   const { f, s } = moveInput();
@@ -973,12 +1013,13 @@ function updatePlayer(dt) {
 
   const wantSprint = (keys.ShiftLeft || keys.ShiftRight) && f > 0;
 
-  // Glissade : C/Ctrl en sprint au sol, direction verrouillée
+  // Glissade : C/Ctrl en sprint au sol, direction verrouillée, élan conservé
   if ((keys.KeyC || keys.ControlLeft) && wantSprint && player.grounded &&
       !player.sliding && G.now >= player.slideCdUntil && len > 0) {
     player.sliding = true;
     player.slideUntil = G.now + SLIDE_TIME * 1000;
     player.slideDirX = dirX; player.slideDirZ = dirZ;
+    player.slideV0 = Math.max(SLIDE_SPEED, Math.min(10.5, Math.hypot(player.vx, player.vz) * 1.02));
     sfx('whip', 0.5);
   }
   if (player.sliding && (G.now >= player.slideUntil || !player.grounded)) {
@@ -989,7 +1030,7 @@ function updatePlayer(dt) {
   let targetVX, targetVZ;
   if (player.sliding) {
     const t = 1 - (player.slideUntil - G.now) / (SLIDE_TIME * 1000);
-    const sp = SLIDE_SPEED + (WALK_SPEED - SLIDE_SPEED) * t;
+    const sp = player.slideV0 + (WALK_SPEED - player.slideV0) * t;
     targetVX = player.slideDirX * sp;
     targetVZ = player.slideDirZ * sp;
   } else {
@@ -1003,21 +1044,37 @@ function updatePlayer(dt) {
     const k = 1 - Math.exp(-ACCEL * dt);
     player.vx += (targetVX - player.vx) * k;
     player.vz += (targetVZ - player.vz) * k;
-    if (keys.Space && !player.sliding) {
+    if (keys.Space) {
+      if (player.sliding) {   // slide-hop : on saute EN glissant, l'élan part avec nous
+        player.sliding = false;
+        player.slideCdUntil = G.now + SLIDE_CD * 0.6;
+      }
       player.vy = JUMP_V;
       player.grounded = false;
     }
+  } else if (len > 0) {
+    // Contrôle aérien : on infléchit la trajectoire, sans gagner de vitesse
+    const speed0 = Math.hypot(player.vx, player.vz);
+    player.vx += dirX * AIR_ACCEL * dt;
+    player.vz += dirZ * AIR_ACCEL * dt;
+    const sNow = Math.hypot(player.vx, player.vz);
+    const cap = Math.max(speed0, WALK_SPEED);
+    if (sNow > cap) { player.vx *= cap / sNow; player.vz *= cap / sNow; }
   }
-  // en l'air : pas de nouvelle accélération (pas de bunny-hop)
 
   player.x += player.vx * dt;
   player.z += player.vz * dt;
   collidePlayer();                      // le step-up peut relever player.y
   const refFeet = player.y;
   if (!player.grounded) player.vy -= GRAVITY * dt;
+  const fallV = -player.vy;
   player.y += player.vy * dt;
   const g = supportHeight(refFeet);     // toit, marche, barricade, rocher... ou sol
   if (player.y <= g) {
+    if (!player.grounded && fallV > 3) {   // atterrissage : la caméra encaisse
+      player.camDip = Math.min(0.3, fallV * 0.022);
+      sfx('land', Math.min(1, fallV / 10));
+    }
     player.y = g;
     player.vy = 0;
     player.grounded = true;
@@ -1025,7 +1082,7 @@ function updatePlayer(dt) {
     player.grounded = false;            // on a quitté le rebord : chute
   }
 
-  // Caméra : hauteur d'yeux (slide baisse), headbob, recul
+  // Caméra : hauteur d'yeux, headbob + pas, recul, roll de strafe, dip, FOV vitesse
   const targetEye = player.sliding ? EYE_SLIDE : EYE;
   player.eyeH += (targetEye - player.eyeH) * Math.min(1, 10 * dt);
   const speed = Math.hypot(player.vx, player.vz);
@@ -1033,12 +1090,26 @@ function updatePlayer(dt) {
   if (player.grounded && !player.sliding && speed > 0.5) {
     player.bobPhase += dt * speed * 1.9;
     bob = Math.sin(player.bobPhase) * 0.035;
+    player.stepAcc += speed * dt;
+    if (player.stepAcc > 2.3) {   // bruits de pas
+      player.stepAcc = 0;
+      sfx('step', 0.4 + (speed / SPRINT_SPEED) * 0.5);
+    }
   }
   player.recoil *= Math.exp(-11 * dt);
+  player.camDip *= Math.exp(-7 * dt);
+  const targetRoll = -s * 0.025 - (player.sliding ? 0.045 : 0);
+  player.roll += (targetRoll - player.roll) * Math.min(1, 10 * dt);
+  const targetFov = 75 + Math.min(1.6, speed / SPRINT_SPEED) * 5 + (player.sliding ? 5 : 0);
+  if (Math.abs(camera.fov - targetFov) > 0.05) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, 8 * dt);
+    camera.updateProjectionMatrix();
+  }
 
-  camera.position.set(player.x, player.y + player.eyeH + bob, player.z);
+  camera.position.set(player.x, player.y + player.eyeH + bob - player.camDip, player.z);
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch + player.recoil;
+  camera.rotation.z = player.roll;
   if (player.shake > 0.0004) {   // screenshake différencié (erreurs, explosions, dégâts)
     camera.rotation.x += (Math.random() - 0.5) * player.shake * 2;
     camera.rotation.y += (Math.random() - 0.5) * player.shake * 2;
@@ -1052,8 +1123,8 @@ const CENTER_SCREEN = new THREE.Vector2(0, 0);
 let shootTargets = [];   // hitboxes vivantes + décor + sol
 function rebuildTargets() {
   shootTargets = [ground, ...obstacleMeshes];
-  for (const n of G.npcs) if (!n.dead) shootTargets.push(n.hitbox);
-  for (const b of G.bots) if (!b.down) shootTargets.push(b.hitbox);
+  for (const n of G.npcs) if (!n.dead) shootTargets.push(n.hitbox, n.headBox);
+  for (const b of G.bots) if (!b.down) shootTargets.push(b.hitbox, b.headBox);
 }
 function raycastCenter() {
   raycaster.setFromCamera(CENTER_SCREEN, camera);
@@ -1067,7 +1138,21 @@ viewmodel.scale.set(0.6, 0.6, 0.6);
 viewmodel.position.set(0.3, -0.26, -0.55);
 camera.add(viewmodel);
 scene.add(camera);
-let vmKick = 0;
+let vmKick = 0, vmSwayX = 0, vmSwayY = 0, muzzleUntil = 0;
+const muzzleMesh = new THREE.Mesh(GEO_BOX, new THREE.MeshBasicMaterial({
+  color: 0xffd27a, blending: THREE.AdditiveBlending, transparent: true,
+  opacity: 0.9, depthWrite: false }));
+muzzleMesh.scale.set(0.16, 0.16, 0.22);
+muzzleMesh.position.set(0, 0.02, -0.52);
+muzzleMesh.visible = false;
+const brassMat = new THREE.MeshBasicMaterial({ color: 0xd8b25a });
+function ejectShell() {   // douille éjectée à droite
+  const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
+  spawnParticle(camera.position.x + rx * 0.3, camera.position.y - 0.15,
+    camera.position.z + rz * 0.3,
+    rx * (1 + Math.random()) + (Math.random() - 0.5), 1.6 + Math.random(),
+    rz * (1 + Math.random()) + (Math.random() - 0.5), brassMat, 0.03, false);
+}
 
 const VIEWMODELS = {   // [w, h, d, hex, x, y, z] par bloc
   pistol:  [[0.07, 0.07, 0.26, 0x4a4239, 0, 0.02, -0.1], [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0]],
@@ -1092,6 +1177,7 @@ function buildViewmodel(key) {
   arm.scale.set(0.08, 0.08, 0.22);
   arm.position.set(0.01, -0.12, 0.14);
   viewmodel.add(arm);
+  viewmodel.add(muzzleMesh);
 }
 buildViewmodel('pistol');
 
@@ -1142,23 +1228,38 @@ function spreadDir(spread) {
 function shoot() {
   if (G.tying || player.down) return;
   if (G.whipArmed) { whipLash(); return; }   // fouet armé = tir impossible
+  if (G.reloading) return;
   if (G.now < G.nextFireAt) return;
   const key = G.currentWeapon, w = WEAPONS[key], st = G.weapons[key];
-  if (!w.infinite && st.ammo <= 0) { selectWeapon('pistol'); return; }
+  if (st.mag <= 0) {   // chargeur vide : clic sec puis rechargement (ou retour pistolet)
+    if (!w.infinite && st.ammo <= 0) { selectWeapon('pistol'); return; }
+    sfx('click');
+    startReload();
+    return;
+  }
   if (G.healing) cancelHeal();
   G.nextFireAt = G.now + w.cd;
-  if (!w.infinite) st.ammo--;
+  st.mag--;
   sfx(w.snd);
-  player.recoil += w.kick;
+  // Recul compensable : la visée MONTE (à toi de la redescendre), le spray l'amplifie
+  G.spray = Math.min(6, G.spray + 1);
+  const kick = w.kick * (1 + G.spray * 0.12);
+  player.pitch = Math.min(1.48, player.pitch + kick * (0.85 + Math.random() * 0.3));
+  player.yaw += (Math.random() - 0.5) * kick * 0.6;
+  player.recoil += kick * 0.35;   // petite part visuelle qui se récupère seule
   vmKick = 1;
+  muzzleUntil = performance.now() + 45;
+  if (!w.explosive) ejectShell();
   const muzzle = new THREE.Vector3(0.26, -0.18, -0.5).applyMatrix4(camera.matrixWorld);
 
   if (w.explosive) {
     fireRocket(muzzle);
   } else {
+    // Bloom : précis immobile, dispersé en courant, très dispersé en l'air
+    const spread = w.spread * currentBloom();
     let scared = false;
     for (let i = 0; i < w.pellets; i++) {
-      const dir = spreadDir(w.spread);
+      const dir = spreadDir(spread);
       let hit = raycastDir(camera.position, dir);
       if (hit && w.range && hit.distance > w.range) hit = null;   // pompe : portée courte
       const to = hit ? hit.point
@@ -1166,15 +1267,65 @@ function shoot() {
       spawnTracer(muzzle, to);
       // Tirer disperse la foule — au départ ET à l'arrivée (mécanique clé du 2D)
       if (!scared) { scareNpcs(to.x, to.z); scared = true; }
-      const npc = hit && hit.object.userData.npc;
-      if (npc && !npc.dead) hitNpc(npc, w.dmg);
-      const bot = hit && hit.object.userData.bot;
-      if (bot && !bot.down) damageBot(bot, w.dmg, true);
+      const ud = hit ? hit.object.userData : null;
+      const dmg = w.dmg * (ud && ud.head ? HEADSHOT_MULT : 1);
+      if (ud && ud.npc && !ud.npc.dead) {
+        hitNpc(ud.npc, dmg);
+        showHitmark(ud.npc.dead ? 'kill' : ud.head ? 'head' : 'hit');
+      } else if (ud && ud.bot && !ud.bot.down) {
+        damageBot(ud.bot, dmg, true);
+        showHitmark(ud.bot.down ? 'kill' : ud.head ? 'head' : 'hit');
+      }
     }
     scareNpcs(player.x, player.z);
   }
-  if (!w.infinite && st.ammo <= 0) selectWeapon('pistol');   // à sec : retour pistolet
+  if (st.mag <= 0) {
+    if (w.infinite || st.ammo > 0) startReload();
+    else selectWeapon('pistol');   // à sec : retour pistolet
+  }
   updateHotbar();
+}
+// Facteur de dispersion selon le mouvement + le spray en cours
+function currentBloom() {
+  const speed = Math.hypot(player.vx, player.vz);
+  return 0.5 + (speed / SPRINT_SPEED) * 1.5 + (player.grounded ? 0 : 1.8) + G.spray * 0.15;
+}
+// Hitmarker : la confirmation visuelle + sonore de la touche
+function showHitmark(type) {
+  const el = document.getElementById('hitmark');
+  el.className = type;
+  el.style.opacity = 1;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = 0; }, 130);
+  sfx(type === 'kill' ? 'kill' : type === 'head' ? 'headshot' : 'hit');
+}
+// Rechargement : R, annulé par le changement d'arme
+function startReload() {
+  const key = G.currentWeapon, w = WEAPONS[key], st = G.weapons[key];
+  if (G.reloading || G.whipArmed || player.down || st.mag >= w.mag) return;
+  if (!w.infinite && st.ammo <= 0) return;
+  G.reloading = { start: G.now, key };
+  sfx('reload');
+  reloadBar.style.display = 'block';
+}
+function cancelReload() {
+  G.reloading = null;
+  reloadBar.style.display = 'none';
+}
+function updateReload() {
+  if (!G.reloading) return;
+  if (G.reloading.key !== G.currentWeapon) { cancelReload(); return; }
+  const w = WEAPONS[G.reloading.key], st = G.weapons[G.reloading.key];
+  const t = (G.now - G.reloading.start) / w.reload;
+  reloadBar.firstElementChild.style.width = Math.min(100, t * 100) + '%';
+  if (t >= 1) {
+    const need = w.mag - st.mag;
+    const take = w.infinite ? need : Math.min(need, st.ammo);
+    st.mag += take;
+    if (!w.infinite) st.ammo -= take;
+    cancelReload();
+    updateHotbar();
+  }
 }
 
 // --- Roquette : projectile + explosion de zone (interrompt les ligotages) ---
@@ -1718,6 +1869,7 @@ function downPlayer(source) {
   G.mouseHeld = false;
   cancelTie();
   cancelHeal();
+  cancelReload();
   dropPlayerEquipment();            // down = on lâche tout, retour pistolet
   sfx('down');
   downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${source} !`;
@@ -1736,8 +1888,11 @@ function respawnPlayer() {
 
 // ---------- Armes : sélection, hotbar, soin canalisé ----------
 const healBar = $('healBar');
+const reloadBar = $('reloadBar');
+const crosshairEl = $('crosshair');
 function selectWeapon(key) {
   if (!G.weapons[key].owned) return;
+  cancelReload();
   G.currentWeapon = key;
   G.whipArmed = false;   // choisir une arme désarme le fouet
   buildViewmodel(key);
@@ -1753,7 +1908,8 @@ function updateHotbar() {
       continue;
     }
     const st = G.weapons[k];
-    el.querySelector('.a').textContent = WEAPONS[k].infinite ? '∞' : st.ammo;
+    el.querySelector('.a').textContent = WEAPONS[k].infinite
+      ? `${st.mag} | ∞` : `${st.mag} | ${st.ammo}`;
     el.classList.toggle('off', !st.owned);
     el.classList.toggle('sel', G.currentWeapon === k);
   }
@@ -1842,6 +1998,11 @@ function pickupLoot(l, idx) {
     const wasOwned = st.owned;
     st.owned = true;
     st.ammo += l.ammo;
+    if (st.mag <= 0) {   // chargeur vide : on l'emplit à la prise
+      const take = Math.min(WEAPONS[l.type].mag, st.ammo);
+      st.mag = take;
+      st.ammo -= take;
+    }
     floatText(l.x, l.z, `+ ${WEAPONS[l.type].name} (${l.ammo})`, 'good', 1.0);
     if (!wasOwned) selectWeapon(l.type);   // première prise = équipée auto
   }
@@ -1864,10 +2025,13 @@ function dropPlayerEquipment() {
     player.x + (Math.random() - 0.5) * 3, player.z + (Math.random() - 0.5) * 3, ammo);
   for (const t of ['rifle', 'shotgun', 'rocket']) {
     const st = G.weapons[t];
-    if (st.owned && st.ammo > 0) drop(t, st.ammo);
+    const total = st.ammo + st.mag;
+    if (st.owned && total > 0) drop(t, total);
     st.owned = false;
     st.ammo = 0;
+    st.mag = 0;
   }
+  G.weapons.pistol.mag = WEAPONS.pistol.mag;   // pistolet rechargé au respawn
   for (let i = 0; i < G.medkits; i++) drop('medkit');
   G.medkits = 0;
   G.currentWeapon = 'pistol';
@@ -1891,14 +2055,18 @@ function buildBotCharacter(def) {
   block(group, meshes, 0.58, 0.2, 0.58, def.hair, 0, 1.88, 0);
   block(group, meshes, 0.09, 0.09, 0.5, 0x3f3a30, 0.24, 1.1, 0.3);   // fusil en main
   const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  hitbox.scale.set(0.75, 2.1, 0.55);
-  hitbox.position.y = 1.05;
+  hitbox.scale.set(0.75, 1.32, 0.55);
+  hitbox.position.y = 0.66;
   group.add(hitbox);
-  return { group, meshes, hitbox };
+  const headBox = new THREE.Mesh(GEO_BOX, hitboxMat);
+  headBox.scale.set(0.58, 0.8, 0.58);
+  headBox.position.y = 1.7;
+  group.add(headBox);
+  return { group, meshes, hitbox, headBox };
 }
 function spawnBot(def, idx) {
   const p = G.spawnPoints[idx + 1] || randomPointInZone();
-  const { group, meshes, hitbox } = buildBotCharacter(def);
+  const { group, meshes, hitbox, headBox } = buildBotCharacter(def);
   group.position.set(p.x, 0, p.z);
   scene.add(group);
   const tag = document.createElement('div');
@@ -1919,10 +2087,12 @@ function spawnBot(def, idx) {
     down: false, downUntil: 0, nextThink: 0, fireAt: 0,
     mode: 'wander', targetNpc: null, tieTarget: null, tieProgress: 0,
     rejected: new Set(), roamTarget: null, aim: 0, zoneAcc: 0,
-    walkPhase: Math.random() * 10,
-    group, meshes, hitbox, tagEl: tag, tieEl: tie, rope
+    walkPhase: Math.random() * 10, stepAcc: 0,
+    group, meshes, hitbox, headBox, tagEl: tag, tieEl: tie, rope
   };
   hitbox.userData.bot = bot;
+  headBox.userData.bot = bot;
+  headBox.userData.head = true;
   G.bots.push(bot);
   return bot;
 }
@@ -2012,7 +2182,7 @@ function botFire(bot, angle, spread, cosmetic, cd, targetY = 1.25) {
   const dHor = Math.max(2, Math.hypot(player.x - bot.x, player.z - bot.z));
   const vy = cosmetic ? 0 : (targetY - 1.25) / (dHor / BOT_BULLET_SPEED);
   const m = new THREE.Mesh(GEO_BOX, botBulletMat);
-  m.scale.set(0.1, 0.1, 0.34);
+  m.scale.set(0.07, 0.07, 1.3);   // trait étiré : lisible comme une balle, pas un caillou
   m.position.set(x, 1.25, z);
   m.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
   scene.add(m);
@@ -2255,9 +2425,16 @@ function updateBots(dt) {
       } else hideBotTie(bot);
     } else hideBotTie(bot);
 
-    // Rendu : position, orientation vers la visée, bob de marche
+    // Rendu : position, orientation vers la visée, bob de marche, bruits de pas
     const moving = Math.hypot(bot.vx, bot.vz) > 0.3;
-    if (moving) bot.walkPhase += dt * 9;
+    if (moving) {
+      bot.walkPhase += dt * 9;
+      bot.stepAcc += Math.hypot(bot.vx, bot.vz) * dt;
+      if (bot.stepAcc > 2.4) {
+        bot.stepAcc = 0;
+        sfx('step', volAt(bot.x, bot.z) * 0.55);
+      }
+    }
     bot.group.position.set(bot.x, moving ? Math.abs(Math.sin(bot.walkPhase)) * 0.06 : 0, bot.z);
     const targetYaw = Math.atan2(Math.cos(bot.aim), Math.sin(bot.aim));
     let dy = targetYaw - bot.group.rotation.y;
@@ -2270,24 +2447,27 @@ function updateBots(dt) {
 function updateBotBullets(dt) {
   for (let i = botBullets.length - 1; i >= 0; i--) {
     const b = botBullets[i];
-    b.x += b.vx * dt;
-    b.z += b.vz * dt;
-    b.y += (b.vy || 0) * dt;
-    b.mesh.position.set(b.x, b.y, b.z);
-    let dead = G.now - b.born > 1300 || Math.abs(b.x) > HALF || Math.abs(b.z) > HALF ||
-               b.y < 0 || b.y > 30;
-    if (!dead && !b.cosmetic) {
+    let dead = G.now - b.born > 1300;
+    // Substeps : à 68 m/s une frame ≈ 1 m → on découpe pour ne rien traverser
+    const steps = b.cosmetic ? 1 : Math.max(1, Math.ceil(BOT_BULLET_SPEED * dt / 0.4));
+    for (let st = 0; st < steps && !dead; st++) {
+      b.x += b.vx * dt / steps;
+      b.z += b.vz * dt / steps;
+      b.y += (b.vy || 0) * dt / steps;
+      if (Math.abs(b.x) > HALF || Math.abs(b.z) > HALF || b.y < 0 || b.y > 30) { dead = true; break; }
+      if (b.cosmetic) continue;
       for (const o of obstacles) {
         if (b.x > o.minX && b.x < o.maxX && b.z > o.minZ && b.z < o.maxZ &&
             b.y > o.minY && b.y < o.maxY) { dead = true; break; }
       }
-      if (!dead && !player.down &&
-          Math.hypot(b.x - player.x, b.z - player.z) < 0.5 &&
+      if (dead) break;
+      if (!player.down && Math.hypot(b.x - player.x, b.z - player.z) < 0.5 &&
           Math.abs(b.y - (player.y + 1.0)) < 1.1) {
         damagePlayer(BOT_BULLET_DMG, b.owner.name.toUpperCase());
         dead = true;
+        break;
       }
-      if (!dead && b.y < 2.1) {
+      if (b.y < 2.1) {
         for (const n of G.npcs) {
           if (n.dead) continue;
           if (Math.hypot(b.x - n.x, b.z - n.z) < 0.45) {
@@ -2308,6 +2488,7 @@ function updateBotBullets(dt) {
         }
       }
     }
+    b.mesh.position.set(b.x, b.y, b.z);
     if (dead) {
       scene.remove(b.mesh);
       botBullets.splice(i, 1);
@@ -2483,10 +2664,23 @@ function animate() {
     updateTimerHud();
     drawMinimap();
 
-    // Recul du viewmodel
+    // Viewmodel vivant : sway, bob directionnel, kick, muzzle flash
     vmKick *= Math.exp(-10 * dt);
-    viewmodel.position.z = -0.45 + vmKick * 0.06;
-    viewmodel.rotation.x = vmKick * 0.12;
+    vmSwayX *= Math.exp(-8 * dt);
+    vmSwayY *= Math.exp(-8 * dt);
+    const strafeV = player.vx * Math.cos(player.yaw) - player.vz * Math.sin(player.yaw);
+    viewmodel.position.x = 0.3 + vmSwayX + strafeV * 0.004;
+    viewmodel.position.y = -0.26 + vmSwayY - player.camDip * 0.4 +
+      Math.sin(player.bobPhase * 2) * 0.01 * Math.min(1, Math.hypot(player.vx, player.vz) / WALK_SPEED);
+    viewmodel.position.z = -0.55 + vmKick * 0.06;
+    viewmodel.rotation.x = vmKick * 0.12 + vmSwayY * 1.2;
+    viewmodel.rotation.y = vmSwayX * 1.2;
+    viewmodel.rotation.z = -strafeV * 0.006;
+    muzzleMesh.visible = performance.now() < muzzleUntil;
+    // Crosshair dynamique : l'écartement AFFICHE ta précision du moment
+    crosshairEl.style.setProperty('--gap', (4 + currentBloom() * 9).toFixed(1) + 'px');
+    G.spray = Math.max(0, G.spray - dt * 4);
+    updateReload();
   }
 
   updateDying();
