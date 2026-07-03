@@ -134,6 +134,33 @@
   #downOverlay .d1 { color: #ff6a55; font-size: 36px; text-shadow: 3px 3px 0 rgba(0,0,0,.5); }
   #downOverlay .d2 { color: #fff; font-family: Arial, sans-serif; font-size: 17px; margin-top: 12px; }
 
+  /* ---------- HUD illustré « papier » (rendu toon) ---------- */
+  .panel { background: #f6ecd4; border: 3px solid #4a3b2a; border-radius: 14px;
+           color: #4a3b2a; box-shadow: 0 3px 0 rgba(58,42,24,.3); }
+  #scoreBox .score, #banner .t, #cluesBox .h, #lb .h, #roundBox .round { color: #8a4f1d; }
+  #banner .s, #cluesBox li, #npcBox { color: #4a3b2a; }
+  #cluesBox li { color: #4a3b2a !important; }
+  #roundBox .timer { color: #33291c; }
+  #roundBox .timer.final { color: #c0392b; }
+  #scoreBox .malus { color: #b23a2a; }
+  #npcBox b { color: #8a4f1d; }
+  #banner .t::before { content: '📢 '; font-size: 20px; }
+  .hpwrap { background: rgba(74,59,42,.3); margin-left: 26px; position: relative; overflow: visible; }
+  .hpwrap::before { content: '❤️'; position: absolute; left: -26px; top: -4px; font-size: 15px; }
+  #hpFill { border-radius: 6px; }
+  #minimap { border-radius: 50%; border: 3px solid #4a3b2a; background: #26301f;
+             box-shadow: 0 3px 0 rgba(58,42,24,.3); }
+  #hotbar .slot { background: #f6ecd4; border: 3px solid #4a3b2a;
+                  box-shadow: 0 3px 0 rgba(58,42,24,.3); }
+  #hotbar .slot .k { color: #8a4f1d; }
+  #hotbar .slot .n { color: #4a3b2a; }
+  #hotbar .slot .a { color: #26200f; }
+  #hotbar .slot.sel { border-color: #e8952f; background: #ffedc4; }
+  #hotbar .slot.off { opacity: .45; }
+  #tieBar, #healBar, #reloadBar { border-color: #4a3b2a; background: rgba(74,59,42,.55); }
+  #vg { position: fixed; inset: 0; pointer-events: none; z-index: 4;
+        background: radial-gradient(ellipse at center, transparent 62%, rgba(40,28,16,.2) 100%); }
+
   /* ---------- Écrans ---------- */
   .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
             justify-content: center; gap: 18px; text-align: center; background: rgba(44,58,30,.92);
@@ -158,9 +185,10 @@
 </head>
 <body>
 
+<div id="vg"></div>
 <div id="hud">
   <div id="banner" class="panel"><div class="t"></div><div class="s"></div></div>
-  <div id="scoreBox" class="panel"><div class="score">SCORE 0</div><div class="malus">Erreur de tir : −10</div>
+  <div id="scoreBox" class="panel"><div class="score">SCORE 0</div><div class="malus">Bon kill : +10 • Erreur : −10 • Mort : −100</div>
     <div class="hpwrap"><div id="hpFill"></div></div></div>
   <div id="roundBox" class="panel"><div class="round">MANCHE 1/4</div><div class="timer">0:30</div></div>
   <div id="cluesBox" class="panel"><div class="h">INDICES</div><ul id="cluesList"><li style="color:#9fb086">Aucun indice pour l'instant…</li></ul></div>
@@ -231,6 +259,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
 // ============================================================
 // BATTLE FOR THE COOKIE — MODE 3D FPS (prototype, Jalon 3D-1)
@@ -245,8 +275,10 @@ const NPC_COUNT = 120;
 const NPC_HP = 20;
 const CLUE_INTERVAL = 30000;
 const MAX_ROUNDS = 4;
-const SCORE_GOOD = 10;
-const MALUS_TABLE = [-10, -10, -15, -20, -25];
+// Barème progressif : purger paie de plus en plus, se tromper coûte de plus en plus
+const SCORE_GOOD_TABLE = [10, 10, 15, 20, 25];      // indexé sur les indices révélés
+const MALUS_TABLE = [-10, -20, -30, -40, -50];
+const SCORE_DEATH = -100;                            // tomber coûte cher (+ 30 s d'inaction)
 const SCORE_CULPRIT = 500;
 const SCORE_WRONG_TIE = -100;
 const SCORE_COOKIE_LOST = -500;
@@ -332,14 +364,19 @@ const BOT_HP = 60;
 const BOT_SPEED = 4.5;             // 200 px/s (joueur 230 → 5.2 m/s)
 const BOT_VIEW = 24;               // 380 px : distance de détection du joueur
 const BOT_FIRE_CD = 450;
+const BOT_WEAPONS = {   // les bots LOOTENT : leur arme portée définit leurs vraies balles
+  pistol:  { dmg: 9,  cd: 520, spread: 0.24, pellets: 1, tier: 0, snd: 'rifle' },
+  shotgun: { dmg: 8,  cd: 850, spread: 0.3,  pellets: 4, tier: 1, snd: 'shotgun' },
+  rifle:   { dmg: 12, cd: 300, spread: 0.18, pellets: 1, tier: 2, snd: 'rifle' }
+};
 const BOT_BULLET_SPEED = 68;       // lisible comme une balle, esquivable à distance
 const BOT_BULLET_DMG = 10;
 const SCORE_BOT = 50;
 const BOT_TIE_ERROR = 0.25;        // 25 % : le bot "lit mal" et ligote un exclu
-const BOT_PURGE_HIT = 0.8;         // purge : 80 % de touche
+const BOT_PURGE_HIT = 0.9;         // purge : 90 % de touche
 const BOT_PURGE_MISTAKE = 0.18;    // 18 % : la rafale touche le voisin
 const BOT_TARGET_ERROR = 0.15;     // 15 % : mauvaise identification (purge un suspect)
-const BOT_PURGE_CD = 320;
+const BOT_PURGE_CD = 260;
 const CAPTURE_TIME = 10000;        // ligotage complet d'un bot : 10 s
 const BOT_DEFS = [
   { name: 'Detective72',  color: '#6ea8ff', hex: 0x6ea8ff, hair: 0x8a5a2b },
@@ -453,11 +490,36 @@ function sfx(name, vol = 1) {
 }
 
 // ---------- S4. SCÈNE ----------
-// Palette « heure dorée » : brume chaude à l'horizon, profondeur sans gêner la lecture (<50 m)
-const HORIZON = 0xe8cfa8;
+// Palette « midi d'été cozy » : horizon clair, verts saturés, rendu toon
+const HORIZON = 0xdcecf0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(HORIZON);
 scene.fog = new THREE.Fog(HORIZON, 70, 200);
+
+// Rampe toon : 4 paliers fondus — le « dessin aux volumes doux » de la référence
+const toonRamp = (() => {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 1;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, '#828282');
+  grad.addColorStop(0.3, '#828282');
+  grad.addColorStop(0.38, '#a9a9a9');
+  grad.addColorStop(0.55, '#a9a9a9');
+  grad.addColorStop(0.63, '#d6d6d6');
+  grad.addColorStop(0.82, '#d6d6d6');
+  grad.addColorStop(0.9, '#ffffff');
+  grad.addColorStop(1, '#ffffff');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 1);
+  const t = new THREE.CanvasTexture(c);
+  t.minFilter = THREE.LinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  return t;
+})();
+function toonMat(opts) {
+  return new THREE.MeshToonMaterial(Object.assign({ gradientMap: toonRamp }, opts));
+}
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 250);
 camera.rotation.order = 'YXZ';
@@ -473,27 +535,81 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 document.body.prepend(renderer.domElement);
 
-// Post-processing : bloom subtil (tracers, flash, explosions) + tone mapping filmique
-let composer = null;
+// Post-processing : CONTOURS dessinés (arêtes de profondeur) + bloom + ACES + FXAA
+const EdgeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tDepth: { value: null },
+    resolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    cameraNear: { value: 0.1 },
+    cameraFar: { value: 250 }
+  },
+  vertexShader: `varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform sampler2D tDepth;
+    uniform vec2 resolution;
+    uniform float cameraNear, cameraFar;
+    varying vec2 vUv;
+    float lind(vec2 uv) {
+      float z = texture2D(tDepth, uv).x * 2.0 - 1.0;
+      return (2.0 * cameraNear * cameraFar) / (cameraFar + cameraNear - z * (cameraFar - cameraNear));
+    }
+    void main() {
+      vec2 px = 1.4 / resolution;
+      float d0 = lind(vUv);
+      float e = 0.0;
+      e = max(e, abs(lind(vUv + vec2(px.x, 0.0)) - d0));
+      e = max(e, abs(lind(vUv - vec2(px.x, 0.0)) - d0));
+      e = max(e, abs(lind(vUv + vec2(0.0, px.y)) - d0));
+      e = max(e, abs(lind(vUv - vec2(0.0, px.y)) - d0));
+      float line = smoothstep(0.018, 0.06, e / d0);
+      line *= smoothstep(150.0, 45.0, d0);   // le trait s'efface dans la brume
+      vec4 col = texture2D(tDiffuse, vUv);
+      float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+      col.rgb = mix(vec3(l), col.rgb, 1.14);              // saturation cozy
+      col.rgb = mix(col.rgb, vec3(0.15, 0.11, 0.08), line * 0.82);   // trait brun
+      gl_FragColor = col;
+    }`
+};
+// La scène est rendue UNE fois dans sceneRT (couleur + profondeur), puis le
+// composer ne fait que LIRE cette cible : zéro boucle de feedback sur la profondeur.
+let composer = null, edgePass = null, fxaaPass = null, sceneRT = null;
 if (!LOWFX) {
-  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-    innerWidth, innerHeight, { samples: 4, type: THREE.HalfFloatType }));
-  composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.6, 0.82));
+  sceneRT = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+    type: THREE.HalfFloatType,
+    depthTexture: new THREE.DepthTexture(innerWidth, innerHeight)
+  });
+  composer = new EffectComposer(renderer);
+  // 'tSceneExt' n'existe pas dans les uniforms : ShaderPass n'écrase pas notre tDiffuse
+  edgePass = new ShaderPass(EdgeShader, 'tSceneExt');
+  edgePass.uniforms.tDiffuse.value = sceneRT.texture;
+  edgePass.uniforms.tDepth.value = sceneRT.depthTexture;
+  composer.addPass(edgePass);
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.6, 0.85));
   composer.addPass(new OutputPass());
+  fxaaPass = new ShaderPass(FXAAShader);
+  fxaaPass.uniforms.resolution.value.set(1 / innerWidth, 1 / innerHeight);
+  composer.addPass(fxaaPass);
 }
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  if (composer) composer.setSize(innerWidth, innerHeight);
+  if (composer) {
+    sceneRT.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+    edgePass.uniforms.resolution.value.set(innerWidth, innerHeight);
+    fxaaPass.uniforms.resolution.value.set(1 / innerWidth, 1 / innerHeight);
+  }
 });
 
 // Lumière de fin d'après-midi : soleil chaud et bas → ombres longues et lisibles.
 // La caméra d'ombre SUIT le joueur : netteté constante sans couvrir les 140 m.
-scene.add(new THREE.HemisphereLight(0xcfd8ec, 0x77894f, 0.88));
-const sun = new THREE.DirectionalLight(0xffd9a0, 1.7);
-sun.position.set(45, 60, 27);
+scene.add(new THREE.HemisphereLight(0xbdd4ee, 0x86a054, 0.95));
+const sun = new THREE.DirectionalLight(0xfff1d6, 1.35);
+sun.position.set(30, 70, 18);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -48;
@@ -514,21 +630,22 @@ function makeSkyTexture() {
   c.width = 512; c.height = 512;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, '#6ea3dc');     // zénith
-  grad.addColorStop(0.5, '#b7cfe6');
-  grad.addColorStop(0.76, '#eedab0');   // bande dorée
-  grad.addColorStop(1, '#e8cfa8');     // horizon = couleur du fog
+  grad.addColorStop(0, '#4f97e0');     // zénith bleu franc
+  grad.addColorStop(0.55, '#a9cdee');
+  grad.addColorStop(1, '#dcecf0');     // horizon = couleur du fog
   g.fillStyle = grad;
   g.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 14; i++) {       // nuages doux
-    const x = Math.random() * 512, y = 90 + Math.random() * 160;
-    const w = 50 + Math.random() * 90, h = 8 + Math.random() * 12;
-    const cg = g.createRadialGradient(x, y, 2, x, y, w);
-    cg.addColorStop(0, 'rgba(255,250,240,0.55)');
-    cg.addColorStop(1, 'rgba(255,250,240,0)');
-    g.fillStyle = cg;
-    g.save(); g.translate(x, y); g.scale(1, h / w); g.translate(-x, -y);
-    g.beginPath(); g.arc(x, y, w, 0, Math.PI * 2); g.fill(); g.restore();
+  for (let i = 0; i < 10; i++) {       // nuages dodus à fond plat
+    const x = Math.random() * 512, y = 70 + Math.random() * 150;
+    const w = 34 + Math.random() * 40, h = w * 0.55;
+    g.fillStyle = 'rgba(255,253,247,0.95)';
+    g.beginPath();
+    g.arc(x, y, w * 0.55, Math.PI, 0);
+    g.arc(x - w * 0.55, y, w * 0.35, Math.PI, 0);
+    g.arc(x + w * 0.55, y, w * 0.35, Math.PI, 0);
+    g.closePath();
+    g.fill();
+    g.fillRect(x - w * 0.88, y - 1, w * 1.76, 4);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -544,7 +661,7 @@ scene.add(skyDome);
 {
   const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(10, 24),
     new THREE.MeshBasicMaterial({ color: 0xfff2cc, fog: false, transparent: true, opacity: 0.95 }));
-  sunDisc.position.set(45, 33, 27).normalize().multiplyScalar(196);
+  sunDisc.position.set(30, 46, 18).normalize().multiplyScalar(196);
   sunDisc.lookAt(0, 0, 0);
   skyDome.add(sunDisc);
 }
@@ -555,27 +672,66 @@ function rnd() { seed = seed * 16807 % 2147483647; return seed / 2147483647; }
 
 // Sol : CanvasTexture procédurale herbe, grain pixelisé
 function makeGroundTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const S = 2048, K = S / WORLD;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
   const g = c.getContext('2d');
-  g.fillStyle = '#8ba05e'; g.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 2600; i++) {
-    g.fillStyle = rnd() < 0.5 ? '#7e945a' : '#96aa66';
-    g.fillRect(Math.floor(rnd() * 512), Math.floor(rnd() * 512), 3, 3);
+  const W = (v) => (v + WORLD / 2) * K;
+  g.fillStyle = '#8fae5a';
+  g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 70; i++) {   // grandes taches douces
+    const x = rnd() * S, y = rnd() * S, r = 60 + rnd() * 170;
+    const cg = g.createRadialGradient(x, y, 0, x, y, r);
+    cg.addColorStop(0, rnd() < 0.5 ? 'rgba(120,152,68,0.32)' : 'rgba(163,188,98,0.32)');
+    cg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = cg;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
   }
-  for (let i = 0; i < 40; i++) {   // fleurs
-    g.fillStyle = rnd() < 0.5 ? '#e8e3d0' : '#e8c86e';
-    g.fillRect(Math.floor(rnd() * 512), Math.floor(rnd() * 512), 4, 4);
+  // chemins de terre : de la place vers les lieux qui comptent
+  const paths = [
+    [[0, 9], [-14, -6], [-27, -16]],
+    [[6, 7], [16, -14], [25, -27]],
+    [[-4, 8], [-18, 14], [-28, 24]],
+    [[7, 5], [20, 14], [30, 23]],
+    [[-8, 2], [-22, -1], [-33, -2]],
+    [[2, -8], [4, -22], [-6, -33]]
+  ];
+  g.lineCap = g.lineJoin = 'round';
+  for (const pass of [[3.6, '#b99a5e'], [2.7, '#c9a86b']]) {
+    g.lineWidth = pass[0] * K;
+    g.strokeStyle = pass[1];
+    for (const p of paths) {
+      g.beginPath();
+      g.moveTo(W(p[0][0]), W(p[0][1]));
+      for (let i = 1; i < p.length; i++) {
+        g.quadraticCurveTo(W(p[i - 1][0]) + (rnd() - 0.5) * 50,
+          W(p[i - 1][1]) + (rnd() - 0.5) * 50, W(p[i][0]), W(p[i][1]));
+      }
+      g.stroke();
+    }
+  }
+  for (let i = 0; i < 2800; i++) {   // touffes d'herbe peintes
+    const x = rnd() * S, y = rnd() * S;
+    g.strokeStyle = rnd() < 0.5 ? 'rgba(98,130,54,0.5)' : 'rgba(178,202,108,0.5)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(x, y + 4);
+    g.quadraticCurveTo(x + 2, y, x + rnd() * 6 - 3, y - 5);
+    g.stroke();
+  }
+  for (let i = 0; i < 240; i++) {   // fleurs peintes
+    const x = rnd() * S, y = rnd() * S;
+    g.fillStyle = rnd() < 0.6 ? '#f3efdd' : '#f0d060';
+    g.beginPath(); g.arc(x, y, 2.6, 0, Math.PI * 2); g.fill();
   }
   const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8);
-  tex.magFilter = THREE.NearestFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   return tex;
 }
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(WORLD, WORLD),
-  new THREE.MeshLambertMaterial({ map: makeGroundTexture() })
+  toonMat({ map: makeGroundTexture() })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -618,7 +774,7 @@ function bloodStainStretched(x, z, angle, len, wid, alpha = 0.8) {
 // Place « cookie » centrale : repère d'orientation
 const plaza = new THREE.Mesh(
   new THREE.CylinderGeometry(9, 9, 0.1, 28),
-  new THREE.MeshLambertMaterial({ color: 0xc98f4e })
+  toonMat({ color: 0xc98f4e })
 );
 plaza.position.y = 0.05;
 plaza.receiveShadow = true;
@@ -626,7 +782,7 @@ scene.add(plaza);
 for (let i = 0; i < 10; i++) {   // pépites
   const chip = new THREE.Mesh(
     new THREE.CylinderGeometry(0.5 + rnd() * 0.4, 0.5 + rnd() * 0.4, 0.14, 10),
-    new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
+    toonMat({ color: 0x5c3a1e })
   );
   const a = rnd() * Math.PI * 2, r = rnd() * 7;
   chip.position.set(Math.cos(a) * r, 0.11, Math.sin(a) * r);
@@ -651,7 +807,7 @@ const obstacleMeshes = [];
 const GEO_BOX = new THREE.BoxGeometry(1, 1, 1);
 const staticParts = [];      // { geo, key } en attente de fusion
 
-const detailCache = new Map();
+const detailCache = new Map();   // (matériaux : voir toonMat)
 function detailTex(kind) {
   if (detailCache.has(kind)) return detailCache.get(kind);
   const c = document.createElement('canvas');
@@ -701,7 +857,7 @@ const structMats = new Map();
 function matFor(kind, hex) {
   const key = kind + ':' + hex;
   if (!structMats.has(key))
-    structMats.set(key, new THREE.MeshLambertMaterial({ color: +hex, map: detailTex(kind) }));
+    structMats.set(key, toonMat({ color: +hex, map: detailTex(kind) }));
   return structMats.get(key);
 }
 // Densité de texels constante : ~1 tuile de texture par 2 m, quel que soit le bloc
@@ -721,6 +877,15 @@ function addObstacle(x, z, w, h, d, hex, y0 = 0, kind = 'planks') {
   staticParts.push({ geo, key: kind + ':' + hex });
   obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minY: y0, maxY: y0 + h,
                    minZ: z - d / 2, maxZ: z + d / 2 });
+}
+function addDeco(x, z, w, h, d, hex, y0 = 0, kind = 'plain') {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  scaleBoxUVs(geo, w, h, d);
+  geo.translate(x, y0 + h / 2, z);
+  staticParts.push({ geo, key: kind + ':' + hex });
+}
+function addDecoGeo(geo, hex, kind = 'plain') {
+  staticParts.push({ geo, key: kind + ':' + hex });
 }
 function buildStaticDecor() {
   const byKey = new Map();
@@ -782,7 +947,15 @@ function addBuilding(x, z, w, d, h, wallHex, doorSide) {
       addObstacle(s.cx, s.cz, s.alongX ? s.len : t, h, s.alongX ? t : s.len, wallHex, 0, 'brick');
     }
   });
-  addObstacle(x, z, w, 0.25, d, 0x6e5844, h);   // dalle de toit praticable
+  addObstacle(x, z, w, 0.25, d, 0xa85a3c, h);   // dalle de toit praticable (terracotta)
+  addObstacle(x + w / 4, z - d / 4, 0.5, 1.1, 0.5, 0xb0705a, h + 0.25, 'brick');   // cheminée
+  for (const sz of [-1, 1]) {   // fenêtres encadrées sur les faces ±z
+    for (const sx of [-1, 1]) {
+      const wx = x + sx * w / 4, wz = z + sz * (d / 2 + 0.03);
+      addDeco(wx, wz, 0.74, 0.94, 0.07, 0x6e5844, 1.1, 'planks');
+      addDeco(wx, wz + sz * 0.02, 0.58, 0.78, 0.07, 0x9fc4d8, 1.18, 'plain');
+    }
+  }
   // Parapets 0.4 : cover sur le toit, franchissables au step-up
   addObstacle(x, z + d / 2 - 0.12, w, 0.4, 0.24, wallHex, h + 0.25, 'brick');
   addObstacle(x, z - d / 2 + 0.12, w, 0.4, 0.24, wallHex, h + 0.25, 'brick');
@@ -835,13 +1008,13 @@ function addRocks(x, z) {
 
 // --- LE DÉCOR : 4 bâtiments à toit accessible, tour de guet, conteneurs,
 // barricades sautables (0.8 m), rochers — la verticalité du jeu ---
-addBuilding(-28, -20, 8, 6, 3.5, 0xd8cfae, 0);
+addBuilding(-28, -20, 8, 6, 3.5, 0xe8dcc0, 0);
 addStairs(-37.46, -20, 1, 0, 1.6, 3.75);
-addBuilding(27, -30, 7, 7, 3.2, 0xa96a52, 3);
+addBuilding(27, -30, 7, 7, 3.2, 0xc98a6a, 3);
 addStairs(27, -38.54, 0, 1, 1.6, 3.45);
-addBuilding(-30, 27, 9, 5, 3.5, 0x9a927f, 2);
+addBuilding(-30, 27, 9, 5, 3.5, 0xd6cbb2, 2);
 addStairs(-30, 34.96, 0, -1, 1.6, 3.75);
-addBuilding(31, 26, 6, 6, 3, 0xc9b183, 1);
+addBuilding(31, 26, 6, 6, 3, 0xe2d3ae, 1);
 addStairs(38.62, 26, -1, 0, 1.6, 3.25);
 
 // Tour de guet — dans la zone finale : la verticalité du climax
@@ -884,6 +1057,81 @@ for (const [bx, bz, alongX] of [[6, -12, 1], [-11, 4, 0], [2, 13, 1], [-18, -8, 
 for (const [rx, rz] of [[44, 20], [-44, -6], [20, 42], [-20, -42],
     [48, -34], [-48, 36], [0, -48], [-40, -32]]) addRocks(rx, rz);
 
+// --- ARBRES : tronc (collision + cover) + boules de feuillage toon ---
+const treeSpots = [];
+function addTree(x, z, sc = 1) {
+  treeSpots.push({ x, z, sc });
+  const trunk = new THREE.CylinderGeometry(0.22 * sc, 0.36 * sc, 2.5 * sc, 7);
+  trunk.translate(x, 1.25 * sc, z);
+  addDecoGeo(trunk, 0x7a5638, 'planks');
+  obstacles.push({ minX: x - 0.3 * sc, maxX: x + 0.3 * sc, minY: 0, maxY: 2.4 * sc,
+                   minZ: z - 0.3 * sc, maxZ: z + 0.3 * sc });
+  const n = 3 + Math.floor(rnd() * 2);
+  for (let i = 0; i < n; i++) {
+    const r = (1.05 + rnd() * 0.7) * sc;
+    const geo = new THREE.SphereGeometry(r, 8, 6);
+    geo.scale(1, 0.75, 1);
+    geo.translate(x + (rnd() - 0.5) * 1.7 * sc, (2.7 + rnd() * 1.1) * sc,
+      z + (rnd() - 0.5) * 1.7 * sc);
+    addDecoGeo(geo, i % 2 ? 0x5f8f46 : 0x6da24f, 'leaf');
+  }
+}
+{
+  let planted = 0, guard = 0;
+  while (planted < 26 && guard++ < 400) {
+    const a = rnd() * Math.PI * 2, r = 26 + rnd() * 39;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.abs(x) > HALF - 3 || Math.abs(z) > HALF - 3) continue;
+    if (footprintBlocked(x, z, 2.6)) continue;
+    addTree(x, z, 0.85 + rnd() * 0.5);
+    planted++;
+  }
+}
+// Bancs (assise = obstacle, dossier = déco), souches, fontaine, clôtures
+function addBench(x, z, alongX) {
+  const w = alongX ? 1.7 : 0.45, d = alongX ? 0.45 : 1.7;
+  addObstacle(x, z, w, 0.53, d, 0x8a6a44, 0, 'planks');
+  addDeco(x + (alongX ? 0 : 0.19), z + (alongX ? 0.19 : 0),
+    alongX ? 1.7 : 0.07, 0.5, alongX ? 0.07 : 1.7, 0x8a6a44, 0.53, 'planks');
+}
+addBench(5, 10.5, 1);
+addBench(-10.5, 6, 0);
+addBench(24, 30, 1);
+for (const [sx, sz] of [[12, -18], [-22, 18], [38, 26]]) {
+  const st = new THREE.CylinderGeometry(0.42, 0.5, 0.5, 8);
+  st.translate(sx, 0.25, sz);
+  addDecoGeo(st, 0x9a7448, 'planks');
+  obstacles.push({ minX: sx - 0.45, maxX: sx + 0.45, minY: 0, maxY: 0.5,
+                   minZ: sz - 0.45, maxZ: sz + 0.45 });
+}
+{ // fontaine de la placette est
+  const fx = 16, fz = -16;
+  const basin = new THREE.CylinderGeometry(2.1, 2.2, 0.6, 14);
+  basin.translate(fx, 0.3, fz);
+  addDecoGeo(basin, 0x9a927f, 'stone');
+  const col = new THREE.CylinderGeometry(0.32, 0.4, 1.3, 8);
+  col.translate(fx, 0.9, fz);
+  addDecoGeo(col, 0x9a927f, 'stone');
+  const bowl = new THREE.CylinderGeometry(0.75, 0.55, 0.22, 10);
+  bowl.translate(fx, 1.5, fz);
+  addDecoGeo(bowl, 0x9a927f, 'stone');
+  const water = new THREE.CylinderGeometry(1.85, 1.85, 0.08, 14);
+  water.translate(fx, 0.62, fz);
+  addDecoGeo(water, 0x8fd0e8, 'plain');
+  obstacles.push({ minX: fx - 2.1, maxX: fx + 2.1, minY: 0, maxY: 0.62,
+                   minZ: fz - 2.1, maxZ: fz + 2.1 });
+}
+function addFence(x, z, len, alongX) {   // clôture déco (traversable, cozy)
+  for (let o = -len / 2; o <= len / 2; o += 1.2) {
+    addDeco(x + (alongX ? o : 0), z + (alongX ? 0 : o), 0.12, 0.85, 0.12, 0xd8cdb0, 0, 'planks');
+  }
+  addDeco(x, z, alongX ? len : 0.07, 0.09, alongX ? 0.07 : len, 0xd8cdb0, 0.52, 'planks');
+}
+addFence(-28, -14.6, 7, 1);
+addFence(30.5, 30.8, 5, 1);
+addFence(-34.6, 27, 4, 0);
+addFence(21.4, -30, 5, 0);
+
 function decorSpot() {
   let x, z, tries = 0;
   do {
@@ -903,20 +1151,51 @@ for (let i = 0; i < 14; i++) {
   const [x, z] = decorSpot();
   addObstacle(x, z, 1.4, 1.0, 1.4, 0x51683c, 0, 'leaf');
 }
-buildStaticDecor();   // fusion : tout le décor statique en ~12 draw calls ombrés
+buildStaticDecor();   // fusion : tout le décor statique en ~15 draw calls ombrés
+{ // fleurs en croisillons (1 draw call)
+  const fc = document.createElement('canvas');
+  fc.width = fc.height = 64;
+  const fg = fc.getContext('2d');
+  for (let i = 0; i < 5; i++) {   // pétales
+    const a = i / 5 * Math.PI * 2;
+    fg.fillStyle = '#f6f2e2';
+    fg.beginPath();
+    fg.ellipse(32 + Math.cos(a) * 14, 32 + Math.sin(a) * 14, 11, 8, a, 0, Math.PI * 2);
+    fg.fill();
+  }
+  fg.fillStyle = '#f0c93c';
+  fg.beginPath(); fg.arc(32, 32, 9, 0, Math.PI * 2); fg.fill();
+  const ftex = new THREE.CanvasTexture(fc);
+  ftex.colorSpace = THREE.SRGBColorSpace;
+  const fgeos = [];
+  let placed = 0, fguard = 0;
+  while (placed < 80 && fguard++ < 500) {
+    const x = (rnd() * 2 - 1) * (HALF - 3), z = (rnd() * 2 - 1) * (HALF - 3);
+    if (Math.hypot(x, z) < 10 || footprintBlocked(x, z, 0.5)) continue;
+    for (const rot of [0, Math.PI / 2]) {
+      const p = new THREE.PlaneGeometry(0.32, 0.28);
+      p.rotateY(rot + rnd());
+      p.translate(x, 0.16, z);
+      fgeos.push(p);
+    }
+    placed++;
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(fgeos, false),
+    new THREE.MeshBasicMaterial({ map: ftex, alphaTest: 0.5, side: THREE.DoubleSide })));
+}
 
 // ---------- S5. FABRIQUE DE PERSONNAGES BLOCKY ----------
 // Géométrie unitaire partagée + cache de matériaux : ~15 matériaux au total.
 const matCache = new Map();
 function getMat(hex) {
-  if (!matCache.has(hex)) matCache.set(hex, new THREE.MeshLambertMaterial({ color: hex }));
+  if (!matCache.has(hex)) matCache.set(hex, toonMat({ color: hex }));
   return matCache.get(hex);
 }
 const grayCache = new Map();
 function getGrayMat(hex) {   // teinte cadavre : attributs encore lisibles (info de déduction)
   if (!grayCache.has(hex)) {
     const c = new THREE.Color(hex).lerp(new THREE.Color(0xbbb3a8), 0.55);
-    grayCache.set(hex, new THREE.MeshLambertMaterial({ color: c }));
+    grayCache.set(hex, toonMat({ color: c }));
   }
   return grayCache.get(hex);
 }
@@ -933,44 +1212,73 @@ function block(group, meshes, w, h, d, hex, x, y, z) {
   return m;
 }
 
-// Attributs surdimensionnés : >50 % de la silhouette porte l'info de déduction.
-// Le personnage regarde vers +Z local.
-function buildCharacter(attrs) {
+// CHIBI : grosse tête ronde (les attributs de déduction = la moitié de la silhouette),
+// corps capsule, bras balants. Le personnage regarde vers +Z local.
+const GEO_HEAD = new THREE.SphereGeometry(0.42, 12, 9);
+const GEO_BODY = new THREE.CapsuleGeometry(0.27, 0.34, 4, 10);
+const GEO_LIMB = new THREE.CapsuleGeometry(0.085, 0.24, 3, 8);
+const GEO_EYE = new THREE.SphereGeometry(0.05, 6, 5);
+const GEO_HAIR_CAP = new THREE.SphereGeometry(0.46, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.5);
+const GEO_HAIR_LONG = new THREE.SphereGeometry(0.48, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.72);
+const GEO_BRIM = new THREE.CylinderGeometry(0.54, 0.54, 0.07, 12);
+const GEO_CROWN = new THREE.CylinderGeometry(0.3, 0.34, 0.26, 12);
+
+function chibiPart(group, meshes, geo, hex, x, y, z, sx = 1, sy = 1, sz = 1) {
+  const m = new THREE.Mesh(geo, getMat(hex));
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
+  m.userData.hex = hex;
+  group.add(m);
+  meshes.push(m);
+  return m;
+}
+function buildChibi(topHex, hairHex, hairLen, hat) {
   const group = new THREE.Group();
   const meshes = [];
-  const hairHex = HAIR_COLORS[attrs.hair];
-
-  block(group, meshes, 0.5, 0.6, 0.3, 0x57493a, 0, 0.3, 0);                    // jambes
-  block(group, meshes, 0.66, 0.68, 0.38, TOP_COLORS[attrs.top], 0, 0.94, 0);   // torse = axe « haut »
-  block(group, meshes, 0.5, 0.5, 0.5, SKIN, 0, 1.53, 0);                       // tête
-  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, -0.11, 1.58, 0.26);          // yeux
-  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, 0.11, 1.58, 0.26);
-  block(group, meshes, 0.58, 0.2, 0.58, hairHex, 0, 1.88, 0);                  // calotte cheveux = axe « couleur »
-
-  if (attrs.len === 'long') {   // axe « longueur » : dos + panneaux latéraux (lisible de face)
-    block(group, meshes, 0.5, 0.75, 0.15, hairHex, 0, 1.4, -0.32);
-    block(group, meshes, 0.12, 0.5, 0.54, hairHex, -0.31, 1.53, 0);
-    block(group, meshes, 0.12, 0.5, 0.54, hairHex, 0.31, 1.53, 0);
+  chibiPart(group, meshes, GEO_LIMB, 0x4a3b2a, -0.13, 0.21, 0);          // jambes
+  chibiPart(group, meshes, GEO_LIMB, 0x4a3b2a, 0.13, 0.21, 0);
+  const body = chibiPart(group, meshes, GEO_BODY, topHex, 0, 0.64, 0);   // torse = axe « haut »
+  const head = chibiPart(group, meshes, GEO_HEAD, SKIN, 0, 1.32, 0);     // tête
+  chibiPart(group, meshes, GEO_EYE, 0x1c1814, -0.14, 1.36, 0.37);        // yeux
+  chibiPart(group, meshes, GEO_EYE, 0x1c1814, 0.14, 1.36, 0.37);
+  // Cheveux : calotte (court) ou bob couvrant (long) — silhouettes bien distinctes
+  if (hairLen === 'long') {
+    chibiPart(group, meshes, GEO_HAIR_LONG, hairHex, 0, 1.36, -0.07, 1, 1, 1.04);
+  } else {
+    chibiPart(group, meshes, GEO_HAIR_CAP, hairHex, 0, 1.34, -0.01, 1, 1, 1);
   }
-  if (attrs.hat === 'chapeau') {   // axe « chapeau » : bord surdimensionné, cheveux visibles dessous
-    block(group, meshes, 0.8, 0.07, 0.8, 0x8a6a44, 0, 2.02, 0);
-    block(group, meshes, 0.46, 0.3, 0.46, 0x8a6a44, 0, 2.2, 0);
+  if (hat === 'chapeau') {
+    chibiPart(group, meshes, GEO_BRIM, 0x8a6a44, 0, 1.72, 0);
+    chibiPart(group, meshes, GEO_CROWN, 0x8a6a44, 0, 1.86, 0);
   }
-
-  // Hitbox invisibles : corps + TÊTE (headshot ×2 — le skill de visée)
+  // Bras : groupes pivotés à l'épaule → balancement de marche
+  const arms = [];
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(side * 0.34, 0.9, 0);
+    const arm = new THREE.Mesh(GEO_LIMB, getMat(SKIN));
+    arm.userData.hex = SKIN;
+    arm.position.y = -0.17;
+    shoulder.add(arm);
+    group.add(shoulder);
+    meshes.push(arm);
+    arms.push(shoulder);
+  }
+  head.castShadow = true;
+  body.castShadow = true;
+  // Hitbox corps + TÊTE (headshot ×2)
   const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  hitbox.scale.set(0.75, 1.32, 0.55);
-  hitbox.position.y = 0.66;
+  hitbox.scale.set(0.7, 1.1, 0.5);
+  hitbox.position.y = 0.55;
   group.add(hitbox);
   const headBox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  headBox.scale.set(0.58, 0.8, 0.58);
-  headBox.position.y = 1.7;
+  headBox.scale.set(0.95, 0.95, 0.95);
+  headBox.position.y = 1.32;
   group.add(headBox);
-
-  // Ombre : seulement les 3 gros blocs (3× moins de casters, visuel identique)
-  meshes[0].castShadow = meshes[1].castShadow = meshes[2].castShadow = true;
-
-  return { group, meshes, hitbox, headBox };
+  return { group, meshes, hitbox, headBox, armL: arms[0], armR: arms[1] };
+}
+function buildCharacter(attrs) {
+  return buildChibi(TOP_COLORS[attrs.top], HAIR_COLORS[attrs.hair], attrs.len, attrs.hat);
 }
 
 // ---------- S6. LOGIQUE DE DÉDUCTION (port de 2d.html L318-325, 514-549, 734-837) ----------
@@ -997,14 +1305,14 @@ function spawnNpc() {
     tries++;
   } while ((Math.hypot(x, z) < SPAWN_CLEAR_R || footprintBlocked(x, z, 0.5)) && tries < 40);
 
-  const { group, meshes, hitbox, headBox } = buildCharacter(attrs);
+  const { group, meshes, hitbox, headBox, armL, armR } = buildCharacter(attrs);
   group.position.set(x, 0, z);
   scene.add(group);
 
   const npc = {
     attrs, hp: NPC_HP, isCulprit: false, dead: false,
     x, z, vx: 0, vz: 0, nextThink: 0, walkPhase: Math.random() * 10,
-    group, meshes, hitbox, headBox, flashUntil: 0
+    group, meshes, hitbox, headBox, armL, armR, flashUntil: 0
   };
   hitbox.userData.npc = npc;
   headBox.userData.npc = npc;
@@ -1018,6 +1326,10 @@ function isExcluded(npc) {
 function currentMalus() {
   const i = Math.min(G.revealedClues.length, MALUS_TABLE.length - 1);
   return MALUS_TABLE[i];
+}
+function currentGood() {
+  const i = Math.min(G.revealedClues.length, SCORE_GOOD_TABLE.length - 1);
+  return SCORE_GOOD_TABLE[i];
 }
 function initCluePool() {
   G.cluePool = [];
@@ -1495,9 +1807,22 @@ function buildViewmodel(key) {
     m.position.set(x, y, z);
     viewmodel.add(m);
   }
+  // Moufles : une main sur la poignée, une en soutien sur les armes longues
+  const handGeo = new THREE.SphereGeometry(0.075, 8, 6);
+  const h1 = new THREE.Mesh(handGeo, getMat(SKIN));
+  h1.scale.set(1, 0.92, 1.15);
+  h1.position.set(0.012, -0.085, 0.015);
+  viewmodel.add(h1);
+  if (key === 'rifle' || key === 'shotgun' || key === 'sniper') {
+    const h2 = new THREE.Mesh(handGeo, getMat(SKIN));
+    h2.scale.set(1, 0.92, 1.15);
+    h2.position.set(-0.012, -0.015, -0.24);
+    viewmodel.add(h2);
+  }
   const arm = new THREE.Mesh(GEO_BOX, getMat(SKIN));
-  arm.scale.set(0.08, 0.08, 0.22);
-  arm.position.set(0.01, -0.12, 0.14);
+  arm.scale.set(0.09, 0.09, 0.24);
+  arm.position.set(0.035, -0.15, 0.16);
+  arm.rotation.x = 0.35;
   viewmodel.add(arm);
   viewmodel.add(muzzleMesh);
 }
@@ -1654,7 +1979,7 @@ function updateReload() {
 
 // --- Roquette : projectile + explosion de zone (interrompt les ligotages) ---
 const rockets = [], explosions = [];
-const rocketMat = new THREE.MeshLambertMaterial({ color: 0x8a3324 });
+const rocketMat = toonMat({ color: 0x8a3324 });
 function fireRocket(muzzle) {
   const dir = spreadDir(0);
   const start = camera.position.clone().add(dir.clone().multiplyScalar(0.9));
@@ -1766,8 +2091,8 @@ function killNpc(npc) {
   killNpcVisual(npc);
   G.kills++;
   if (isExcluded(npc)) {
-    G.score += SCORE_GOOD;
-    floatScore(npc, SCORE_GOOD);
+    G.score += currentGood();
+    floatScore(npc, currentGood());
   } else {
     const malus = currentMalus();
     G.score += malus;
@@ -1913,24 +2238,25 @@ function updateTie() {
 // ---------- EFFETS : gouttes de sang, puffs, témoins, screenshake ----------
 const particles = [];
 const bloodDropMat = new THREE.MeshBasicMaterial({ color: 0x7a1612 });
+const leafMat = new THREE.MeshBasicMaterial({ color: 0x7fae4f });
 const puffMat = new THREE.MeshBasicMaterial({ color: 0xf3ead8, transparent: true, opacity: 0.85 });
-function spawnParticle(x, y, z, vx, vy, vz, mat, size, stains) {
+function spawnParticle(x, y, z, vx, vy, vz, mat, size, stains, grav = 12, life = 900) {
   const m = new THREE.Mesh(GEO_BOX, mat);
   m.scale.setScalar(size);
   m.position.set(x, y, z);
   scene.add(m);
-  particles.push({ mesh: m, vx, vy, vz, stains, born: performance.now() });
+  particles.push({ mesh: m, vx, vy, vz, stains, grav, life, born: performance.now() });
 }
 function updateParticles(dt) {
   const now = performance.now();
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.vy -= 12 * dt;
+    p.vy -= p.grav * dt;
     p.mesh.position.x += p.vx * dt;
     p.mesh.position.y += p.vy * dt;
     p.mesh.position.z += p.vz * dt;
     const grounded = p.mesh.position.y <= 0.03;
-    if (grounded || now - p.born > 900) {
+    if (grounded || now - p.born > p.life) {
       if (grounded && p.stains) {
         bloodStain(p.mesh.position.x, p.mesh.position.z, 0.04 + Math.random() * 0.07);
       }
@@ -2064,8 +2390,12 @@ function updateNpcs(dt) {
       n.group.rotation.y += dy * Math.min(1, 8 * dt);
       n.walkPhase += dt * 9;
       n.group.position.y = Math.abs(Math.sin(n.walkPhase)) * 0.06;
+      n.armL.rotation.x = Math.sin(n.walkPhase) * 0.55;
+      n.armR.rotation.x = -Math.sin(n.walkPhase) * 0.55;
     } else {
       n.group.position.y = 0;
+      n.armL.rotation.x *= 0.9;
+      n.armR.rotation.x *= 0.9;
     }
     n.group.position.x = n.x;
     n.group.position.z = n.z;
@@ -2096,7 +2426,8 @@ function refreshCluesList() {
 }
 function updateHud() {
   $('scoreBox').querySelector('.score').textContent = `SCORE ${G.score}`;
-  $('scoreBox').querySelector('.malus').textContent = `Erreur de tir : ${currentMalus()}`;
+  $('scoreBox').querySelector('.malus').textContent =
+    `Bon kill : +${currentGood()} • Erreur : ${currentMalus()} • Mort : ${SCORE_DEATH}`;
   let excl = 0, susp = 0;
   for (const n of G.npcs) {
     if (n.dead) continue;
@@ -2177,16 +2508,21 @@ function updateHpBar() {
   hpFill.style.width = pct + '%';
   hpFill.style.background = pct > 50 ? '#7dd94a' : pct > 25 ? '#ffe08a' : '#ff6a55';
 }
-function damagePlayer(dmg, source) {
+function damagePlayer(dmg, source, attackerBot = null) {
   if (player.down || G.gameOver) return;
   player.hp -= dmg;
   if (dmg >= 1) { sfx('hurt'); shake(0.006); }
   cancelHeal();                     // tout dégât interrompt le soin...
   if (G.tying) cancelTie();         // ...et le ligotage (comme en 2D)
   updateHpBar();
-  if (player.hp <= 0) downPlayer(source);
+  if (player.hp <= 0) downPlayer(source, attackerBot);
 }
-function downPlayer(source) {
+function downPlayer(source, attackerBot = null) {
+  G.score += SCORE_DEATH;           // mourir coûte cher...
+  if (attackerBot) {                // ...et ton tueur encaisse la prime
+    attackerBot.score += SCORE_BOT;
+    floatText(attackerBot.x, attackerBot.z, '+' + SCORE_BOT, 'good');
+  }
   player.down = true;
   player.downUntil = G.now + RESPAWN_MS;
   player.hp = 0;
@@ -2197,8 +2533,9 @@ function downPlayer(source) {
   cancelReload();
   dropPlayerEquipment();            // down = on lâche tout, retour pistolet
   sfx('down');
-  downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${source} !`;
+  downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${source} ! (${SCORE_DEATH})`;
   downOverlay.style.display = 'flex';
+  updateHud();
 }
 function respawnPlayer() {
   player.down = false;
@@ -2312,7 +2649,8 @@ function spawnInitialLoot() {
           z = (Math.random() * 2 - 1) * (HALF - 3);
         }
         tries++;
-      } while (footprintBlocked(x, z, 0.5) && tries < 12);
+      } while ((footprintBlocked(x, z, 0.5) ||
+                G.spawnPoints.some(sp => Math.hypot(sp.x - x, sp.z - z) < 3)) && tries < 12);
       spawnPickup(type, x, z);
     }
   }
@@ -2374,29 +2712,19 @@ const botBullets = [];
 const botBulletMat = new THREE.MeshBasicMaterial({ color: 0xffb36e });
 
 function buildBotCharacter(def) {
-  const group = new THREE.Group();
-  const meshes = [];
-  block(group, meshes, 0.5, 0.6, 0.3, 0x4a3b2a, 0, 0.3, 0);
-  block(group, meshes, 0.66, 0.68, 0.38, def.hex, 0, 0.94, 0);   // torse = couleur du bot
-  block(group, meshes, 0.5, 0.5, 0.5, SKIN, 0, 1.53, 0);
-  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, -0.11, 1.58, 0.26);
-  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, 0.11, 1.58, 0.26);
-  block(group, meshes, 0.58, 0.2, 0.58, def.hair, 0, 1.88, 0);
-  block(group, meshes, 0.09, 0.09, 0.5, 0x3f3a30, 0.24, 1.1, 0.3);   // fusil en main
-  const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  hitbox.scale.set(0.75, 1.32, 0.55);
-  hitbox.position.y = 0.66;
-  group.add(hitbox);
-  const headBox = new THREE.Mesh(GEO_BOX, hitboxMat);
-  headBox.scale.set(0.58, 0.8, 0.58);
-  headBox.position.y = 1.7;
-  group.add(headBox);
-  meshes[0].castShadow = meshes[1].castShadow = meshes[2].castShadow = true;
-  return { group, meshes, hitbox, headBox };
+  const c = buildChibi(def.hex, def.hair, 'court', 'rien');
+  const gun = new THREE.Mesh(GEO_BOX, getMat(0x3f3a30));
+  gun.userData.hex = 0x3f3a30;
+  gun.scale.set(0.08, 0.08, 0.55);
+  gun.position.set(0, -0.28, 0.18);
+  c.armR.add(gun);
+  c.meshes.push(gun);
+  c.gunMesh = gun;
+  return c;
 }
 function spawnBot(def, idx) {
   const p = G.spawnPoints[idx + 1] || randomPointInZone();
-  const { group, meshes, hitbox, headBox } = buildBotCharacter(def);
+  const { group, meshes, hitbox, headBox, armL, armR, gunMesh } = buildBotCharacter(def);
   group.position.set(p.x, 0, p.z);
   scene.add(group);
   const tag = document.createElement('div');
@@ -2416,9 +2744,10 @@ function spawnBot(def, idx) {
     x: p.x, z: p.z, vx: 0, vz: 0, hp: BOT_HP, score: 0,
     down: false, downUntil: 0, nextThink: 0, fireAt: 0,
     mode: 'wander', targetNpc: null, tieTarget: null, tieProgress: 0,
+    weapon: 'pistol', foe: null,
     rejected: new Set(), roamTarget: null, aim: 0, zoneAcc: 0,
     walkPhase: Math.random() * 10, stepAcc: 0,
-    group, meshes, hitbox, headBox, tagEl: tag, tieEl: tie, rope
+    group, meshes, hitbox, headBox, armL, armR, gunMesh, tagEl: tag, tieEl: tie, rope
   };
   hitbox.userData.bot = bot;
   headBox.userData.bot = bot;
@@ -2434,7 +2763,7 @@ function getStandings() {
   ].sort((a, b) => b.score - a.score);
 }
 
-function damageBot(bot, dmg, fromPlayer) {
+function damageBot(bot, dmg, fromPlayer, killerBot = null) {
   if (!bot || bot.down || G.gameOver) return;
   bot.hp -= dmg;
   bot.tieProgress = 0;   // tout dégât interrompt son ligotage
@@ -2443,9 +2772,14 @@ function damageBot(bot, dmg, fromPlayer) {
     for (const m of bot.meshes)
       m.material = bot.down ? getGrayMat(m.userData.hex) : getMat(m.userData.hex);
   }, 60);
-  if (bot.hp <= 0) downBot(bot, fromPlayer);
+  if (bot.hp <= 0) downBot(bot, fromPlayer, killerBot);
 }
-function downBot(bot, fromPlayer) {
+function downBot(bot, fromPlayer, killerBot = null) {
+  bot.score += SCORE_DEATH;         // la mort coûte −100, pour eux aussi
+  if (killerBot) {
+    killerBot.score += SCORE_BOT;
+    floatText(killerBot.x, killerBot.z, '+' + SCORE_BOT, 'good');
+  }
   bot.down = true;
   bot.downUntil = G.now + RESPAWN_MS;
   bot.hp = 0;
@@ -2458,9 +2792,12 @@ function downBot(bot, fromPlayer) {
   for (const m of bot.meshes) m.material = getGrayMat(m.userData.hex);
   rebuildTargets();
   sfx('down', 0.4 + volAt(bot.x, bot.z) * 0.6);
-  // Drop d'équipement : le PvP devient une source de loot
+  // Drop d'équipement : l'arme portée d'abord — le PvP devient une source de loot
+  const carried = bot.weapon !== 'pistol' ? bot.weapon : null;
+  bot.weapon = 'pistol';
+  bot.gunMesh.material = getMat(0x3f3a30);
   const r = Math.random();
-  const dropType = r < 0.45 ? 'rifle' : r < 0.7 ? 'medkit' : r < 0.9 ? 'shotgun' : 'rocket';
+  const dropType = carried || (r < 0.45 ? 'rifle' : r < 0.7 ? 'medkit' : r < 0.9 ? 'shotgun' : 'rocket');
   spawnPickup(dropType, bot.x + (Math.random() - 0.5) * 3, bot.z + (Math.random() - 0.5) * 3);
   if (fromPlayer) {
     G.score += SCORE_BOT;
@@ -2502,23 +2839,25 @@ function nearestExcluded(x, z, maxDist) {
   return best;
 }
 
-function botFire(bot, angle, spread, cosmetic, cd, targetY = 1.25) {
+function botFire(bot, angle, spread, cosmetic, cd, targetY = 1.25, dmg = BOT_BULLET_DMG, pellets = 1, snd = 'rifle') {
   if (G.now < bot.fireAt) return false;
   bot.fireAt = G.now + cd + Math.random() * 150;
-  sfx('rifle', volAt(bot.x, bot.z) * 0.7);
-  const a = angle + (Math.random() - 0.5) * spread;
-  const x = bot.x + Math.cos(a) * 0.8, z = bot.z + Math.sin(a) * 0.8;
-  // Composante verticale : les bots visent aussi un joueur en hauteur (toits)
-  const dHor = Math.max(2, Math.hypot(player.x - bot.x, player.z - bot.z));
-  const vy = cosmetic ? 0 : (targetY - 1.25) / (dHor / BOT_BULLET_SPEED);
-  const m = new THREE.Mesh(GEO_BOX, botBulletMat);
-  m.scale.set(0.07, 0.07, 1.3);   // trait étiré : lisible comme une balle, pas un caillou
-  m.position.set(x, 1.25, z);
-  m.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
-  scene.add(m);
-  botBullets.push({ mesh: m, x, z, y: 1.25, vy, vx: Math.cos(a) * BOT_BULLET_SPEED,
-    vz: Math.sin(a) * BOT_BULLET_SPEED, born: G.now, owner: bot, cosmetic });
-  scareNpcs(x, z);
+  sfx(snd, volAt(bot.x, bot.z) * 0.7);
+  for (let p = 0; p < pellets; p++) {
+    const a = angle + (Math.random() - 0.5) * spread;
+    const x = bot.x + Math.cos(a) * 0.8, z = bot.z + Math.sin(a) * 0.8;
+    // Composante verticale : les bots visent aussi un joueur en hauteur (toits)
+    const dHor = Math.max(2, Math.hypot(player.x - bot.x, player.z - bot.z));
+    const vy = cosmetic ? 0 : (targetY - 1.25) / (dHor / BOT_BULLET_SPEED);
+    const m = new THREE.Mesh(GEO_BOX, botBulletMat);
+    m.scale.set(0.07, 0.07, 1.3);   // trait étiré : lisible comme une balle, pas un caillou
+    m.position.set(x, 1.25, z);
+    m.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
+    scene.add(m);
+    botBullets.push({ mesh: m, x, z, y: 1.25, vy, dmg, vx: Math.cos(a) * BOT_BULLET_SPEED,
+      vz: Math.sin(a) * BOT_BULLET_SPEED, born: G.now, owner: bot, cosmetic });
+  }
+  scareNpcs(bot.x, bot.z);
   return true;
 }
 // Purge "facile" : le kill est résolu aux dés, la balle n'est que du visuel (leçon 2D)
@@ -2550,7 +2889,7 @@ function applyBotShotOnNpc(bot, npc) {
   for (const m of npc.meshes) m.material = flashMat;
   if (npc.hp <= 0) {
     if (npc.isCulprit) { culpritDown(npc, bot); return; }
-    bot.score += isExcluded(npc) ? SCORE_GOOD : currentMalus();
+    bot.score += isExcluded(npc) ? currentGood() : currentMalus();
     killNpcVisual(npc);
     updateHud();
   }
@@ -2559,16 +2898,24 @@ function applyBotShotOnNpc(bot, npc) {
 // IA : priorités = combat > migration > capture > purge > patrouille
 function thinkBot(bot) {
   if (G.now < bot.nextThink) return;
-  bot.nextThink = G.now + 220 + Math.random() * 120;
+  bot.nextThink = G.now + 180 + Math.random() * 100;
   const dCenter = Math.hypot(bot.x, bot.z);
   const dPlayer = Math.hypot(bot.x - player.x, bot.z - player.z);
 
-  // 1. Le joueur est à portée → combat (approche / recul / strafe)
-  if (!player.down && dPlayer < BOT_VIEW) {
+  // 1. Un RIVAL à portée (joueur ou autre bot) → combat
+  let foe = null, foeD = BOT_VIEW;
+  if (!player.down && dPlayer < foeD) { foe = player; foeD = dPlayer; }
+  for (const ob of G.bots) {
+    if (ob === bot || ob.down) continue;
+    const d = Math.hypot(ob.x - bot.x, ob.z - bot.z);
+    if (d < foeD) { foe = ob; foeD = d; }
+  }
+  if (foe) {
     bot.mode = 'fight';
-    let ang = Math.atan2(player.z - bot.z, player.x - bot.x);
-    if (dPlayer < 9.5) ang += Math.PI;
-    else if (dPlayer <= 16.5) ang += (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2;
+    bot.foe = foe;
+    let ang = Math.atan2(foe.z - bot.z, foe.x - bot.x);
+    if (foeD < 9.5) ang += Math.PI;
+    else if (foeD <= 16.5) ang += (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2;
     bot.vx = Math.cos(ang) * BOT_SPEED;
     bot.vz = Math.sin(ang) * BOT_SPEED;
     return;
@@ -2605,11 +2952,29 @@ function thinkBot(bot) {
     } else { bot.vx = bot.vz = 0; }
     return;
   }
+  // 3.5 Mal armé et un bon fusil qui traîne ? On va le chercher.
+  if (BOT_WEAPONS[bot.weapon].tier < 2) {
+    let best = null, bd = 20;
+    for (const l of G.loot) {
+      if ((l.type !== 'rifle' && l.type !== 'shotgun') || l.y > 1) continue;
+      if (BOT_WEAPONS[l.type].tier <= BOT_WEAPONS[bot.weapon].tier) continue;
+      const d = Math.hypot(l.x - bot.x, l.z - bot.z);
+      if (d < bd) { bd = d; best = l; }
+    }
+    if (best) {
+      bot.mode = 'loot';
+      const ang = Math.atan2(best.z - bot.z, best.x - bot.x);
+      bot.vx = Math.cos(ang) * BOT_SPEED;
+      bot.vz = Math.sin(ang) * BOT_SPEED;
+      return;
+    }
+  }
+
   // 4. Purge des exclus (avec erreurs d'identification calibrées)
   const t = bot.targetNpc;
-  const tgtInvalid = !t || t.dead || Math.hypot(t.x - bot.x, t.z - bot.z) > 57;
+  const tgtInvalid = !t || t.dead || Math.hypot(t.x - bot.x, t.z - bot.z) > 65;
   if (tgtInvalid) {
-    bot.targetNpc = nearestExcluded(bot.x, bot.z, 51);
+    bot.targetNpc = nearestExcluded(bot.x, bot.z, 60);
     if (bot.targetNpc && Math.random() < BOT_TARGET_ERROR) {
       const wrong = nearestSuspect(bot.targetNpc.x, bot.targetNpc.z, bot.rejected);
       if (wrong && Math.hypot(bot.targetNpc.x - wrong.x, bot.targetNpc.z - wrong.z) < 16) {
@@ -2622,8 +2987,8 @@ function thinkBot(bot) {
     const d = Math.hypot(bot.targetNpc.x - bot.x, bot.targetNpc.z - bot.z);
     if (d > 9.5) {
       const ang = Math.atan2(bot.targetNpc.z - bot.z, bot.targetNpc.x - bot.x);
-      bot.vx = Math.cos(ang) * BOT_SPEED * 0.9;
-      bot.vz = Math.sin(ang) * BOT_SPEED * 0.9;
+      bot.vx = Math.cos(ang) * BOT_SPEED;
+      bot.vz = Math.sin(ang) * BOT_SPEED;
     } else { bot.vx = bot.vz = 0; }
     return;
   }
@@ -2657,7 +3022,7 @@ function resolveBotTie(bot, npc) {
 }
 
 function showBotTie(bot, npc) {
-  const v = new THREE.Vector3(npc.x, 2.3, npc.z).project(camera);
+  const v = new THREE.Vector3(npc.x, 2.05, npc.z).project(camera);
   if (v.z <= 1) {
     bot.tieEl.style.display = 'block';
     bot.tieEl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
@@ -2712,30 +3077,37 @@ function updateBots(dt) {
       }
     }
 
-    // Soin opportuniste sur les medkits croisés
-    if (bot.hp < BOT_HP * 0.75) {
-      for (let i = G.loot.length - 1; i >= 0; i--) {
-        const l = G.loot[i];
-        if (l.type === 'medkit' && Math.hypot(bot.x - l.x, bot.z - l.z) < 1.3) {
-          bot.hp = Math.min(BOT_HP, bot.hp + MEDKIT_HEAL);
-          scene.remove(l.group);
-          G.loot.splice(i, 1);
-          sfx('pickup', volAt(bot.x, bot.z) * 0.6);
-          break;
-        }
-      }
+    // Ramassage opportuniste : medkit (si blessé) ou meilleure arme
+    for (let i = G.loot.length - 1; i >= 0; i--) {
+      const l = G.loot[i];
+      if (l.y > 1 || Math.hypot(bot.x - l.x, bot.z - l.z) >= 1.3) continue;
+      if (l.type === 'medkit' && bot.hp < BOT_HP * 0.75) {
+        bot.hp = Math.min(BOT_HP, bot.hp + MEDKIT_HEAL);
+      } else if ((l.type === 'rifle' || l.type === 'shotgun') &&
+                 BOT_WEAPONS[l.type].tier > BOT_WEAPONS[bot.weapon].tier) {
+        bot.weapon = l.type;
+        bot.gunMesh.material = getMat(l.type === 'shotgun' ? 0x6e4a2f : 0x3f3a30);
+      } else continue;
+      scene.remove(l.group);
+      G.loot.splice(i, 1);
+      sfx('pickup', volAt(bot.x, bot.z) * 0.6);
+      break;
     }
 
     // Visée & tir
     let aimTarget = null;
-    if (bot.mode === 'fight' && !player.down) aimTarget = player;
+    if (bot.mode === 'fight' && bot.foe && !bot.foe.down) aimTarget = bot.foe;
     else if (bot.mode === 'purge' && bot.targetNpc && !bot.targetNpc.dead) aimTarget = bot.targetNpc;
     if (aimTarget) {
       bot.aim = Math.atan2(aimTarget.z - bot.z, aimTarget.x - bot.x);
       const d = Math.hypot(aimTarget.x - bot.x, aimTarget.z - bot.z);
       if (bot.mode === 'fight') {
-        if (d < 26.7) botFire(bot, bot.aim, 0.22, false, BOT_FIRE_CD, player.y + 1.2);   // vraies balles
-      } else if (d < 16.5) {
+        if (d < 26.7) {   // vraies balles, selon l'arme lootée
+          const bw = BOT_WEAPONS[bot.weapon];
+          const ty = (aimTarget === player ? player.y : 0) + 1.2;
+          botFire(bot, bot.aim, bw.spread, false, bw.cd, ty, bw.dmg, bw.pellets, bw.snd);
+        }
+      } else if (d < 20) {
         botPurgeShot(bot, aimTarget);   // PNJ : résolution aux dés
       }
     } else if (Math.hypot(bot.vx, bot.vz) > 0.3) {
@@ -2757,6 +3129,8 @@ function updateBots(dt) {
 
     // Rendu : position, orientation vers la visée, bob de marche, bruits de pas
     const moving = Math.hypot(bot.vx, bot.vz) > 0.3;
+    bot.armR.rotation.x = -1.25;   // fusil épaulé
+    bot.armL.rotation.x = moving ? Math.sin(bot.walkPhase) * 0.5 : 0;
     if (moving) {
       bot.walkPhase += dt * 9;
       bot.stepAcc += Math.hypot(bot.vx, bot.vz) * dt;
@@ -2793,10 +3167,19 @@ function updateBotBullets(dt) {
       if (dead) break;
       if (!player.down && Math.hypot(b.x - player.x, b.z - player.z) < 0.5 &&
           Math.abs(b.y - (player.y + 1.0)) < 1.1) {
-        damagePlayer(BOT_BULLET_DMG, b.owner.name.toUpperCase());
+        damagePlayer(b.dmg || BOT_BULLET_DMG, b.owner.name.toUpperCase(), b.owner);
         dead = true;
         break;
       }
+      for (const ob of G.bots) {   // les bots se tirent dessus : la rivalité est réelle
+        if (ob === b.owner || ob.down) continue;
+        if (Math.hypot(b.x - ob.x, b.z - ob.z) < 0.55 && b.y < 2.1) {
+          damageBot(ob, b.dmg || BOT_BULLET_DMG, false, b.owner);
+          dead = true;
+          break;
+        }
+      }
+      if (dead) break;
       if (b.y < 2.1) {
         for (const n of G.npcs) {
           if (n.dead) continue;
@@ -2807,7 +3190,7 @@ function updateBotBullets(dt) {
             if (n.hp <= 0) {
               if (n.isCulprit) culpritDown(n, b.owner);
               else {
-                b.owner.score += isExcluded(n) ? SCORE_GOOD : currentMalus();
+                b.owner.score += isExcluded(n) ? currentGood() : currentMalus();
                 killNpcVisual(n);
                 updateHud();
               }
@@ -2828,7 +3211,7 @@ function updateBotBullets(dt) {
 
 function drawBotTags() {
   for (const bot of G.bots) {
-    const v = new THREE.Vector3(bot.x, 2.5, bot.z).project(camera);
+    const v = new THREE.Vector3(bot.x, 2.15, bot.z).project(camera);
     if (v.z > 1) { bot.tagEl.style.display = 'none'; continue; }
     bot.tagEl.style.display = 'block';
     bot.tagEl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
@@ -2845,6 +3228,10 @@ const mmSolids = obstacles.filter(o =>
 function drawMinimap() {
   const s = 150 / WORLD, cx = 75, cz = 75;
   mmCtx.clearRect(0, 0, 150, 150);
+  mmCtx.save();
+  mmCtx.beginPath();
+  mmCtx.arc(75, 75, 74, 0, Math.PI * 2);
+  mmCtx.clip();
   mmCtx.fillStyle = 'rgba(30,38,22,.8)';   // structures (murs, rochers, conteneurs)
   for (const o of mmSolids) {
     mmCtx.fillRect(cx + o.minX * s, cz + o.minZ * s, (o.maxX - o.minX) * s, (o.maxZ - o.minZ) * s);
@@ -2871,6 +3258,7 @@ function drawMinimap() {
   mmCtx.moveTo(px, pz);
   mmCtx.lineTo(px - Math.sin(player.yaw) * 8, pz - Math.cos(player.yaw) * 8);
   mmCtx.stroke();
+  mmCtx.restore();
 }
 function endGame(win, title, text) {
   if (G.gameOver) return;
@@ -2942,6 +3330,7 @@ function startGame() {
 window.__G = G;
 window.__player = player;
 window.__obstacles = obstacles;
+window.__fb = footprintBlocked;
 
 let lastT = performance.now();
 function animate() {
@@ -2969,6 +3358,16 @@ function animate() {
     updateLoot(dt);
     updateRockets(dt);
     updateBots(dt);
+    // Feuilles qui tombent doucement près des arbres
+    if (Math.random() < dt * 2.2 && treeSpots.length) {
+      const t = treeSpots[Math.floor(Math.random() * treeSpots.length)];
+      if (Math.hypot(t.x - player.x, t.z - player.z) < 45) {
+        spawnParticle(t.x + (Math.random() - 0.5) * 2.2, 2.6 * t.sc + Math.random(),
+          t.z + (Math.random() - 0.5) * 2.2,
+          (Math.random() - 0.5) * 0.5, -0.2, (Math.random() - 0.5) * 0.5,
+          leafMat, 0.09, false, 0.35, 6000);
+      }
+    }
     updateBotBullets(dt);
     drawBotTags();
 
@@ -3033,10 +3432,16 @@ function animate() {
   // Le dôme de ciel et la caméra d'ombre suivent le joueur
   skyDome.position.copy(camera.position);
   const sx = Math.round(player.x), sz = Math.round(player.z);
-  sun.position.set(sx + 45, 60, sz + 27);
+  sun.position.set(sx + 30, 70, sz + 18);
   sun.target.position.set(sx, 0, sz);
-  if (composer) composer.render();
-  else renderer.render(scene, camera);
+  if (composer) {
+    renderer.setRenderTarget(sceneRT);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 animate();
 </script>
