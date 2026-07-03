@@ -75,6 +75,36 @@
   #minimap { position: absolute; bottom: 14px; left: 14px; background: rgba(44,58,30,.72);
              border: 2px solid rgba(255,224,138,.55); border-radius: 10px; }
 
+  /* Hotbar & soin */
+  #hotbar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 8px; }
+  #hotbar .slot { background: rgba(44,58,30,.78); border: 2px solid rgba(255,255,255,.12);
+                  border-radius: 8px; padding: 7px 10px; text-align: center; min-width: 68px; }
+  #hotbar .slot .k { color: #ffe08a; font-size: 13px; display: block; }
+  #hotbar .slot .n { font-family: Arial, sans-serif; font-size: 11px; color: #dfe8cc;
+                     display: block; margin: 2px 0; }
+  #hotbar .slot .a { font-size: 12px; color: #fff; display: block; }
+  #hotbar .slot.sel { border-color: #ffe08a; }
+  #hotbar .slot.off { opacity: .35; }
+  #healBar { position: absolute; bottom: 96px; left: 50%; transform: translateX(-50%);
+             width: 200px; height: 12px; background: rgba(0,0,0,.55); border: 2px solid #7dd94a;
+             border-radius: 7px; display: none; }
+  #healBar > div { height: 100%; width: 0%; background: #7dd94a; border-radius: 4px; }
+
+  /* Bots : tags flottants, barre de ligotage, classement */
+  .botTag { position: absolute; transform: translate(-50%, -100%); text-align: center;
+            font-size: 12px; text-shadow: 2px 2px 0 rgba(0,0,0,.55); pointer-events: none; }
+  .botTag .bhp { width: 44px; height: 5px; background: rgba(0,0,0,.55); border-radius: 3px;
+                 margin: 3px auto 0; overflow: hidden; }
+  .botTag .bhp > div { height: 100%; width: 100%; }
+  .botTie { position: absolute; transform: translate(-50%, -100%); width: 64px; height: 9px;
+            background: rgba(44,58,30,.9); border: 1px solid rgba(255,224,138,.4);
+            border-radius: 4px; display: none; overflow: hidden; }
+  .botTie > div { height: 100%; width: 0%; }
+  #lb { position: absolute; top: 118px; right: 14px; min-width: 175px; }
+  #lb .h { color: #ffe08a; font-size: 14px; margin-bottom: 4px; }
+  #lbLines div { font-family: Arial, sans-serif; font-size: 13px; line-height: 1.6; }
+
   /* Down / respawn */
   #downOverlay { position: absolute; inset: 0; display: none; flex-direction: column;
                  align-items: center; justify-content: center; text-align: center;
@@ -112,13 +142,22 @@
     <div class="hpwrap"><div id="hpFill"></div></div></div>
   <div id="roundBox" class="panel"><div class="round">MANCHE 1/4</div><div class="timer">0:30</div></div>
   <div id="cluesBox" class="panel"><div class="h">INDICES</div><ul id="cluesList"><li style="color:#9fb086">Aucun indice pour l'instant…</li></ul></div>
-  <div id="npcBox" class="panel"><b id="cAlive">120</b> passants • <b id="cExcl">0</b> exclus restants • <b id="cSusp">120</b> suspects</div>
+  <div id="npcBox" class="panel"><b id="cAlive">120</b> passants • <b id="cExcl">0</b> exclus restants • <b id="cSusp">120</b> suspects • <b id="cBots">3/3</b> bots</div>
+  <div id="lb" class="panel"><div class="h">CLASSEMENT</div><div id="lbLines"></div></div>
   <div id="crosshair"></div>
   <div id="accusePrompt">Maintenir <b>E</b> — ACCUSER</div>
-  <div id="tieBar"><div></div><span class="lbl">ACCUSATION EN COURS…</span></div>
+  <div id="tieBar"><div></div><span class="lbl">LIGOTAGE — immobile, clic maintenu !</span></div>
   <div id="zoneVignette"></div>
   <div id="hitFlash"></div>
   <canvas id="minimap" width="150" height="150"></canvas>
+  <div id="hotbar">
+    <div class="slot sel" data-w="pistol"><span class="k">1</span><span class="n">Pistolet</span><span class="a">∞</span></div>
+    <div class="slot off" data-w="rifle"><span class="k">2</span><span class="n">Fusil</span><span class="a">0</span></div>
+    <div class="slot off" data-w="shotgun"><span class="k">3</span><span class="n">Pompe</span><span class="a">0</span></div>
+    <div class="slot off" data-w="rocket"><span class="k">4</span><span class="n">Roquette</span><span class="a">0</span></div>
+    <div class="slot off" data-w="medkit"><span class="k">R</span><span class="n">Medkit</span><span class="a">×0</span></div>
+  </div>
+  <div id="healBar"><div></div></div>
   <div id="downOverlay"><div class="d1">ÉLIMINÉ PAR LA ZONE !</div>
     <div class="d2">Respawn dans <span id="downCount">30</span> s</div></div>
 </div>
@@ -130,8 +169,8 @@
      Purge les innocentés (<b style="color:#7dd94a">+10</b>), épargne les suspects (malus croissant !) et, en phase finale,
      <b>accuse le coupable</b> — de près, sans bouger, pendant 5 secondes.</p>
   <div class="controls">
-    ZQSD / WASD — se déplacer &nbsp;•&nbsp; Souris — viser / tirer<br>
-    Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; E — accuser (finale)<br>
+    ZQSD / WASD — se déplacer &nbsp;•&nbsp; Souris — viser / tirer &nbsp;•&nbsp; 1-4 / molette — armes<br>
+    Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; R — medkit &nbsp;•&nbsp; E — fouet (finale)<br>
     Échap — pause &nbsp;•&nbsp; <i>Desktop uniquement</i>
   </div>
   <button class="btn" id="startBtn">CLIQUE POUR JOUER</button>
@@ -205,17 +244,30 @@ const EYE_SLIDE = 0.95;
 const SENS = 0.0022;               // rad / px souris
 const PLAYER_R = 0.35;             // rayon de collision
 
-// Tir — raycast hitscan (pas de pool de balles : piège n°1 du brief éliminé)
-const FIRE_CD = 350;
-const GUN_DMG = 12;                // 2 balles par PNJ, comme en 2D
+// Arsenal — port du 2D, distances en mètres (×140/2200), tir raycast hitscan
+const WEAPONS = {
+  pistol:  { name: 'Pistolet', dmg: 12, cd: 400,  pellets: 1, spread: 0.03, infinite: true, kick: 0.016, snd: 'pistol' },
+  rifle:   { name: 'Fusil',    dmg: 12, cd: 150,  pellets: 1, spread: 0.05, kick: 0.010, snd: 'rifle' },
+  shotgun: { name: 'Pompe',    dmg: 8,  cd: 900,  pellets: 5, spread: 0.45, range: 16, kick: 0.035, snd: 'shotgun' },
+  rocket:  { name: 'Roquette', dmg: 60, cd: 1200, explosive: true, radius: 5.7, speed: 26.7, life: 1600, kick: 0.030, snd: 'rocket' }
+};
+const WEAPON_ORDER = ['pistol', 'rifle', 'shotgun', 'rocket'];
+const AMMO_PACK = { rifle: 30, shotgun: 12, rocket: 1 };
+const MEDKIT_HEAL = 50;
+const MEDKIT_MAX = 3;
+const HEAL_TIME = 2000;            // canalisation du soin, vitesse ×0.5
+const LOOT_COUNTS = { rifle: 8, shotgun: 6, rocket: 4, medkit: 8 };  // 26 caisses
+const HOT_DROP_SHARE = 0.4;        // 40 % du loot au centre
 const SCARE_RADIUS = 11;           // 170 px / 2200 ≈ ratio conservé
+const EXPLO_SCARE_RADIUS = 19;     // 300 px du 2D
 const SOUND_RANGE = 60;            // atténuation distance (900 px du 2D)
 
-// Capture — accusation canalisée (remplace le fouet dans ce jalon)
-const ACCUSE_RANGE = 12;
-const ACCUSE_TIME = 5000;          // 5 s immobile, E maintenu
-const ACCUSE_CD = 3000;            // après une mauvaise accusation
-const FINAL_TIME = 60000;          // timer de la phase finale
+// Capture au fouet (phase finale) — port du 2D : E arme, clic = lash,
+// ligotage 10 s au clic maintenu, immobile et désarmé
+const WHIP_RANGE = 12.7;           // 200 px
+const WHIP_COOLDOWN = 600;         // entre deux lashs ratés
+const WHIP_FAIL_CD = 1200;         // après un mauvais ligotage complet
+const FINAL_TIME = 90000;          // timer de la phase finale (le ligotage prend 10 s)
 
 // Zone — mêmes ratios que le 2D (1560 px sur 2200 → 99 m sur 140)
 const ZONE_START_R = 99;
@@ -226,6 +278,26 @@ const ZONE_SHRINK_MS = 10000;
 // Joueur : PV / down / respawn (identique au 2D)
 const PLAYER_MAX_HP = 100;
 const RESPAWN_MS = 30000;
+
+// Bots (faux joueurs) — probabilités identiques au 2D, distances en mètres
+const BOT_HP = 60;
+const BOT_SPEED = 4.5;             // 200 px/s (joueur 230 → 5.2 m/s)
+const BOT_VIEW = 24;               // 380 px : distance de détection du joueur
+const BOT_FIRE_CD = 450;
+const BOT_BULLET_SPEED = 24;       // dodgeable, ratio proche du 2D
+const BOT_BULLET_DMG = 10;
+const SCORE_BOT = 50;
+const BOT_TIE_ERROR = 0.25;        // 25 % : le bot "lit mal" et ligote un exclu
+const BOT_PURGE_HIT = 0.8;         // purge : 80 % de touche
+const BOT_PURGE_MISTAKE = 0.18;    // 18 % : la rafale touche le voisin
+const BOT_TARGET_ERROR = 0.15;     // 15 % : mauvaise identification (purge un suspect)
+const BOT_PURGE_CD = 320;
+const CAPTURE_TIME = 10000;        // ligotage complet d'un bot : 10 s
+const BOT_DEFS = [
+  { name: 'Detective72',  color: '#6ea8ff', hex: 0x6ea8ff, hair: 0x8a5a2b },
+  { name: 'CookieHunter', color: '#c79bff', hex: 0xc79bff, hair: 0xe8c86e },
+  { name: 'ClueMaster',   color: '#ff8a7a', hex: 0xff8a7a, hair: 0x2e2620 }
+];
 
 // PNJ
 const NPC_WALK_MIN = 1.1, NPC_WALK_MAX = 1.7;   // m/s errance
@@ -243,8 +315,16 @@ const G = {
   zoneR: ZONE_START_R, zoneFrom: ZONE_START_R, zoneTo: ZONE_START_R,
   zonePhase: 0, zoneShrinkStart: 0,
   tying: null,                  // { npc, start }
-  accuseCdUntil: 0, eHeld: false,
+  whipArmed: false, whipCdUntil: 0,
   nextFireAt: 0, mouseHeld: false,
+  weapons: {
+    pistol:  { owned: true,  ammo: Infinity },
+    rifle:   { owned: false, ammo: 0 },
+    shotgun: { owned: false, ammo: 0 },
+    rocket:  { owned: false, ammo: 0 }
+  },
+  currentWeapon: 'pistol', medkits: 0, healing: null,
+  loot: [], bots: [], spawnPoints: [],
   sfxCtx: null
 };
 
@@ -288,6 +368,13 @@ function volAt(x, z) {
 function sfx(name, vol = 1) {
   switch (name) {
     case 'pistol': tone(240, 70, 0.09, 'square', 0.12 * vol); break;
+    case 'rifle':  tone(190, 60, 0.06, 'square', 0.10 * vol); break;
+    case 'shotgun':noise(0.18, 0.30 * vol, 900); tone(120, 40, 0.15, 'square', 0.10 * vol); break;
+    case 'rocket': tone(110, 30, 0.35, 'sawtooth', 0.16 * vol); noise(0.3, 0.10 * vol, 500); break;
+    case 'explosion': noise(0.5, 0.5 * vol, 400); tone(90, 25, 0.5, 'sine', 0.35 * vol); break;
+    case 'pickup': tone(660, 660, 0.06, 'sine', 0.15 * vol);
+                   setTimeout(() => tone(990, 990, 0.08, 'sine', 0.15 * vol), 70); break;
+    case 'heal':   tone(330, 660, 0.25, 'sine', 0.15 * vol); break;
     case 'pop':    tone(320, 90, 0.12, 'sine', 0.18 * vol); break;
     case 'clue':   [523, 659, 784].forEach((f, i) => setTimeout(() => tone(f, f, 0.14, 'triangle', 0.16 * vol), i * 110)); break;
     case 'wrong':  tone(220, 80, 0.35, 'sawtooth', 0.18 * vol); break;
@@ -353,6 +440,40 @@ const ground = new THREE.Mesh(
 );
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
+
+// ---------- SANG : taches persistantes sur une CanvasTexture au sol ----------
+// (une seule draw call quel que soit le nombre de taches — curseur perf du 2D réglé)
+const bloodCanvas = document.createElement('canvas');
+bloodCanvas.width = bloodCanvas.height = 2048;
+const bloodCtx = bloodCanvas.getContext('2d');
+const bloodTex = new THREE.CanvasTexture(bloodCanvas);
+let bloodDirty = false;
+const bloodPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD, WORLD),
+  new THREE.MeshBasicMaterial({ map: bloodTex, transparent: true, depthWrite: false })
+);
+bloodPlane.rotation.x = -Math.PI / 2;
+bloodPlane.position.y = 0.02;
+scene.add(bloodPlane);
+const B_SCALE = 2048 / WORLD;   // m → px canvas
+function bloodStain(x, z, r, alpha = 0.75) {
+  bloodCtx.fillStyle = `rgba(122,22,18,${alpha})`;
+  bloodCtx.beginPath();
+  bloodCtx.arc((x + WORLD / 2) * B_SCALE, (z + WORLD / 2) * B_SCALE, r * B_SCALE, 0, Math.PI * 2);
+  bloodCtx.fill();
+  bloodDirty = true;
+}
+function bloodStainStretched(x, z, angle, len, wid, alpha = 0.8) {
+  bloodCtx.save();
+  bloodCtx.translate((x + WORLD / 2) * B_SCALE, (z + WORLD / 2) * B_SCALE);
+  bloodCtx.rotate(angle);
+  bloodCtx.fillStyle = `rgba(122,22,18,${alpha})`;
+  bloodCtx.beginPath();
+  bloodCtx.ellipse(0, 0, len * B_SCALE, wid * B_SCALE, 0, 0, Math.PI * 2);
+  bloodCtx.fill();
+  bloodCtx.restore();
+  bloodDirty = true;
+}
 
 // Place « cookie » centrale : repère d'orientation
 const plaza = new THREE.Mesh(
@@ -559,7 +680,7 @@ function startRound() {
     G.finalEndAt = G.now + FINAL_TIME;
     setTimeout(() => {
       if (!G.gameOver) showBanner('PHASE FINALE !',
-        `Trouve le coupable et ACCUSE-LE : vise-le à moins de ${ACCUSE_RANGE} m et maintiens E, immobile, 5 s !`, 7000);
+        'Arme ton FOUET (E), attrape le coupable au lash et maintiens le clic 10 s pour le ligoter VIVANT !', 7000);
     }, 5600);
   } else {
     G.nextClueAt = G.now + CLUE_INTERVAL;
@@ -575,10 +696,14 @@ function startRound() {
 }
 
 // Mort du coupable par balle → transfert du rôle (port de 2d.html L734-787)
-function culpritDown(npc) {
-  G.score += SCORE_WRONG_TIE;
+function culpritDown(npc, killerBot = null) {
+  if (killerBot) killerBot.score += SCORE_WRONG_TIE;
+  else {
+    G.score += SCORE_WRONG_TIE;
+    errorFlash();
+    shake(0.016);
+  }
   floatScore(npc, SCORE_WRONG_TIE);
-  errorFlash();
   sfx('wrong');
   npc.isCulprit = false;
   killNpcVisual(npc);
@@ -586,9 +711,15 @@ function culpritDown(npc) {
   const candidates = G.npcs.filter(n => !n.dead && n !== npc && !isExcluded(n));
   if (candidates.length === 0) {
     // Le dernier suspect vient d'être abattu : le cookie est perdu à jamais.
-    G.score += SCORE_COOKIE_LOST;
-    endGame(false, 'COOKIE PERDU À JAMAIS…',
-      'Le dernier suspect est mort. Le mystère est détruit, et le cookie avec lui.');
+    // Amende massive au destructeur, et la partie se joue AU SCORE.
+    if (killerBot) killerBot.score += SCORE_COOKIE_LOST;
+    else G.score += SCORE_COOKIE_LOST;
+    const standings = getStandings();
+    const playerWins = standings[0].name === 'YOU';
+    endGame(playerWins,
+      playerWins ? 'COOKIE PERDU — VICTOIRE AU SCORE !'
+                 : `COOKIE PERDU — ${standings[0].name.toUpperCase()} GAGNE AU SCORE`,
+      'Le dernier suspect est mort. Le mystère est détruit, la partie se joue au score.');
     return;
   }
   const heir = candidates[Math.floor(Math.random() * candidates.length)];
@@ -604,15 +735,25 @@ const player = {
   x: 0, y: 0, z: 0,            // y = hauteur des PIEDS
   vx: 0, vy: 0, vz: 0,
   yaw: 0, pitch: 0,
-  hp: PLAYER_MAX_HP, down: false, downUntil: 0,
+  hp: PLAYER_MAX_HP, down: false, downUntil: 0, shake: 0,
   grounded: true,
   sliding: false, slideUntil: 0, slideCdUntil: 0, slideDirX: 0, slideDirZ: 0,
   eyeH: EYE, recoil: 0, bobPhase: 0
 };
 {
-  const a = Math.random() * Math.PI * 2;
-  player.x = Math.cos(a) * 45;
-  player.z = Math.sin(a) * 45;
+  // Spawns en anneau équidistant (joueur + bots) : personne sur le loot central
+  const totalSpawns = 1 + BOT_DEFS.length;
+  const baseAngle = Math.random() * Math.PI * 2;
+  for (let i = 0; i < totalSpawns; i++) {
+    const a = baseAngle + (i * Math.PI * 2) / totalSpawns + (Math.random() - 0.5) * 0.4;
+    const r = ZONE_START_R * (0.58 + Math.random() * 0.12);
+    G.spawnPoints.push({
+      x: Math.max(-HALF + 2, Math.min(HALF - 2, Math.cos(a) * r)),
+      z: Math.max(-HALF + 2, Math.min(HALF - 2, Math.sin(a) * r))
+    });
+  }
+  player.x = G.spawnPoints[0].x;
+  player.z = G.spawnPoints[0].z;
   player.yaw = Math.atan2(-player.x, -player.z);   // face au centre
 }
 
@@ -620,11 +761,27 @@ const keys = {};
 addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault();
   keys[e.code] = true;
-  if (e.code === 'KeyE' && !e.repeat) { G.eHeld = true; tryStartAccuse(); }
+  if (e.code === 'KeyE' && !e.repeat) toggleWhip();
 });
 addEventListener('keyup', (e) => {
   keys[e.code] = false;
-  if (e.code === 'KeyE') { G.eHeld = false; cancelTie(); }
+});
+// Armes : 1-4 (positions physiques → OK AZERTY) + molette, R = medkit
+addEventListener('keydown', (e) => {
+  if (!G.started || player.down || G.gameOver) return;
+  if (e.code === 'Digit1') selectWeapon('pistol');
+  if (e.code === 'Digit2') selectWeapon('rifle');
+  if (e.code === 'Digit3') selectWeapon('shotgun');
+  if (e.code === 'Digit4') selectWeapon('rocket');
+  if (e.code === 'KeyR' && !e.repeat) startHeal();
+});
+addEventListener('wheel', (e) => {
+  if (!G.locked || player.down || G.gameOver) return;
+  const owned = WEAPON_ORDER.filter(k => G.weapons[k].owned);
+  if (owned.length < 2) return;
+  let i = owned.indexOf(G.currentWeapon);
+  i = (i + (e.deltaY > 0 ? 1 : -1) + owned.length) % owned.length;
+  selectWeapon(owned[i]);
 });
 // e.code = position PHYSIQUE des touches : KeyW/A/S/D couvre AZERTY (ZQSD) et QWERTY
 function moveInput() {
@@ -709,7 +866,8 @@ function updatePlayer(dt) {
     targetVX = player.slideDirX * sp;
     targetVZ = player.slideDirZ * sp;
   } else {
-    const sp = wantSprint ? SPRINT_SPEED : WALK_SPEED;
+    let sp = wantSprint ? SPRINT_SPEED : WALK_SPEED;
+    if (G.healing) sp *= 0.5;   // soin canalisé : vitesse ×0.5, comme en 2D
     targetVX = dirX * sp;
     targetVZ = dirZ * sp;
   }
@@ -749,6 +907,11 @@ function updatePlayer(dt) {
   camera.position.set(player.x, player.y + player.eyeH + bob, player.z);
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch + player.recoil;
+  if (player.shake > 0.0004) {   // screenshake différencié (erreurs, explosions, dégâts)
+    camera.rotation.x += (Math.random() - 0.5) * player.shake * 2;
+    camera.rotation.y += (Math.random() - 0.5) * player.shake * 2;
+    player.shake *= Math.exp(-5 * dt);
+  }
 }
 
 // ---------- S8. TIR, VIEWMODEL, ACCUSATION ----------
@@ -758,6 +921,7 @@ let shootTargets = [];   // hitboxes vivantes + décor + sol
 function rebuildTargets() {
   shootTargets = [ground, ...obstacleMeshes];
   for (const n of G.npcs) if (!n.dead) shootTargets.push(n.hitbox);
+  for (const b of G.bots) if (!b.down) shootTargets.push(b.hitbox);
 }
 function raycastCenter() {
   raycaster.setFromCamera(CENTER_SCREEN, camera);
@@ -765,22 +929,39 @@ function raycastCenter() {
   return hits.length ? hits[0] : null;
 }
 
-// Viewmodel : pistolet blocky enfant de la caméra
+// Viewmodel : arme blocky enfant de la caméra, reconstruite au changement d'arme
 const viewmodel = new THREE.Group();
-{
-  const slide = new THREE.Mesh(GEO_BOX, getMat(0x4a4239));
-  slide.scale.set(0.07, 0.07, 0.26); slide.position.set(0, 0.02, -0.1);
-  const grip = new THREE.Mesh(GEO_BOX, getMat(0x57493a));
-  grip.scale.set(0.06, 0.12, 0.08); grip.position.set(0, -0.07, 0);
-  const arm = new THREE.Mesh(GEO_BOX, getMat(SKIN));
-  arm.scale.set(0.08, 0.08, 0.22); arm.position.set(0.01, -0.12, 0.14);
-  viewmodel.add(slide, grip, arm);
-  viewmodel.scale.set(0.6, 0.6, 0.6);
-  viewmodel.position.set(0.3, -0.26, -0.55);
-  camera.add(viewmodel);
-}
+viewmodel.scale.set(0.6, 0.6, 0.6);
+viewmodel.position.set(0.3, -0.26, -0.55);
+camera.add(viewmodel);
 scene.add(camera);
 let vmKick = 0;
+
+const VIEWMODELS = {   // [w, h, d, hex, x, y, z] par bloc
+  pistol:  [[0.07, 0.07, 0.26, 0x4a4239, 0, 0.02, -0.1], [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0]],
+  whip:    [[0.06, 0.18, 0.06, 0x57493a, 0, -0.04, 0], [0.05, 0.05, 0.2, 0x8a5a2b, 0, 0.04, -0.1],
+            [0.04, 0.14, 0.04, 0x8a5a2b, 0.01, -0.02, -0.22], [0.035, 0.1, 0.035, 0x8a5a2b, 0.03, -0.12, -0.26]],
+  rifle:   [[0.07, 0.07, 0.5, 0x3f3a30, 0, 0.02, -0.2], [0.05, 0.05, 0.12, 0x2c2620, 0, 0.08, -0.32],
+            [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0.02]],
+  shotgun: [[0.09, 0.09, 0.42, 0x6e4a2f, 0, 0.02, -0.16], [0.07, 0.07, 0.16, 0x3f3a30, 0, -0.05, -0.2],
+            [0.06, 0.12, 0.08, 0x57493a, 0, -0.07, 0.04]],
+  rocket:  [[0.13, 0.13, 0.5, 0x5a6247, 0, 0.03, -0.18], [0.14, 0.14, 0.08, 0xc75b4a, 0, 0.03, -0.44],
+            [0.06, 0.12, 0.08, 0x57493a, 0, -0.08, 0.06]]
+};
+function buildViewmodel(key) {
+  while (viewmodel.children.length) viewmodel.remove(viewmodel.children[0]);
+  for (const [w, h, d, hex, x, y, z] of VIEWMODELS[key]) {
+    const m = new THREE.Mesh(GEO_BOX, getMat(hex));
+    m.scale.set(w, h, d);
+    m.position.set(x, y, z);
+    viewmodel.add(m);
+  }
+  const arm = new THREE.Mesh(GEO_BOX, getMat(SKIN));
+  arm.scale.set(0.08, 0.08, 0.22);
+  arm.position.set(0.01, -0.12, 0.14);
+  viewmodel.add(arm);
+}
+buildViewmodel('pistol');
 
 // Tracers : le « juice » du projectile sans la physique
 const tracers = [];
@@ -788,8 +969,8 @@ const tracerMat = new THREE.MeshBasicMaterial({
   color: 0xffe9a8, transparent: true, opacity: 0.9,
   blending: THREE.AdditiveBlending, depthWrite: false
 });
-function spawnTracer(from, to) {
-  const m = new THREE.Mesh(GEO_BOX, tracerMat.clone());
+function spawnTracer(from, to, mat) {
+  const m = new THREE.Mesh(GEO_BOX, mat || tracerMat.clone());
   const mid = from.clone().add(to).multiplyScalar(0.5);
   m.position.copy(mid);
   m.lookAt(to);
@@ -812,36 +993,160 @@ function updateTracers() {
   }
 }
 
+function raycastDir(origin, dir) {
+  raycaster.set(origin, dir);
+  const hits = raycaster.intersectObjects(shootTargets, false);
+  return hits.length ? hits[0] : null;
+}
+function spreadDir(spread) {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  dir.x += (Math.random() - 0.5) * spread;
+  dir.y += (Math.random() - 0.5) * spread;
+  dir.z += (Math.random() - 0.5) * spread;
+  return dir.normalize();
+}
+
 function shoot() {
-  if (G.now < G.nextFireAt || G.tying || player.down) return;
-  G.nextFireAt = G.now + FIRE_CD;
-  sfx('pistol');
-  player.recoil += 0.016;
+  if (G.tying || player.down) return;
+  if (G.whipArmed) { whipLash(); return; }   // fouet armé = tir impossible
+  if (G.now < G.nextFireAt) return;
+  const key = G.currentWeapon, w = WEAPONS[key], st = G.weapons[key];
+  if (!w.infinite && st.ammo <= 0) { selectWeapon('pistol'); return; }
+  if (G.healing) cancelHeal();
+  G.nextFireAt = G.now + w.cd;
+  if (!w.infinite) st.ammo--;
+  sfx(w.snd);
+  player.recoil += w.kick;
   vmKick = 1;
+  const muzzle = new THREE.Vector3(0.26, -0.18, -0.5).applyMatrix4(camera.matrixWorld);
 
-  const hit = raycastCenter();
-  const from = new THREE.Vector3(0.26, -0.18, -0.5).applyMatrix4(camera.matrixWorld);
-  let to;
-  if (hit) to = hit.point;
-  else {
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    to = camera.position.clone().add(dir.multiplyScalar(120));
+  if (w.explosive) {
+    fireRocket(muzzle);
+  } else {
+    let scared = false;
+    for (let i = 0; i < w.pellets; i++) {
+      const dir = spreadDir(w.spread);
+      let hit = raycastDir(camera.position, dir);
+      if (hit && w.range && hit.distance > w.range) hit = null;   // pompe : portée courte
+      const to = hit ? hit.point
+        : camera.position.clone().add(dir.multiplyScalar(w.range || 120));
+      spawnTracer(muzzle, to);
+      // Tirer disperse la foule — au départ ET à l'arrivée (mécanique clé du 2D)
+      if (!scared) { scareNpcs(to.x, to.z); scared = true; }
+      const npc = hit && hit.object.userData.npc;
+      if (npc && !npc.dead) hitNpc(npc, w.dmg);
+      const bot = hit && hit.object.userData.bot;
+      if (bot && !bot.down) damageBot(bot, w.dmg, true);
+    }
+    scareNpcs(player.x, player.z);
   }
-  spawnTracer(from, to);
+  if (!w.infinite && st.ammo <= 0) selectWeapon('pistol');   // à sec : retour pistolet
+  updateHotbar();
+}
 
-  // Tirer disperse la foule — au départ ET à l'arrivée (mécanique clé du 2D)
+// --- Roquette : projectile + explosion de zone (interrompt les ligotages) ---
+const rockets = [], explosions = [];
+const rocketMat = new THREE.MeshLambertMaterial({ color: 0x8a3324 });
+function fireRocket(muzzle) {
+  const dir = spreadDir(0);
+  const start = camera.position.clone().add(dir.clone().multiplyScalar(0.9));
+  const m = new THREE.Mesh(GEO_BOX, rocketMat);
+  m.scale.set(0.16, 0.16, 0.45);
+  m.position.copy(start);
+  m.lookAt(start.clone().add(dir));
+  scene.add(m);
+  rockets.push({ mesh: m, dir, born: G.now });
+  spawnTracer(muzzle, start);
   scareNpcs(player.x, player.z);
-  scareNpcs(to.x, to.z);
+}
+function updateRockets(dt) {
+  const w = WEAPONS.rocket;
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const r = rockets[i];
+    r.mesh.position.add(r.dir.clone().multiplyScalar(w.speed * dt));
+    const p = r.mesh.position;
+    let boom = G.now - r.born > w.life || p.y <= 0.12 || p.y > 40 ||
+               Math.abs(p.x) > HALF + 1 || Math.abs(p.z) > HALF + 1;
+    if (!boom) {
+      for (const o of obstacles) {
+        if (p.x > o.minX - 0.1 && p.x < o.maxX + 0.1 &&
+            p.z > o.minZ - 0.1 && p.z < o.maxZ + 0.1 && p.y < 1.4) { boom = true; break; }
+      }
+    }
+    if (!boom) {
+      for (const n of G.npcs) {
+        if (n.dead) continue;
+        if (p.y < 2.3 && Math.hypot(n.x - p.x, n.z - p.z) < 0.55) { boom = true; break; }
+      }
+    }
+    if (!boom) {
+      for (const b of G.bots) {
+        if (b.down) continue;
+        if (p.y < 2.3 && Math.hypot(b.x - p.x, b.z - p.z) < 0.6) { boom = true; break; }
+      }
+    }
+    if (boom) {
+      scene.remove(r.mesh);
+      rockets.splice(i, 1);
+      explodeAt(p.x, p.y, p.z);
+    }
+  }
+}
+function explodeAt(x, y, z) {
+  sfx('explosion', 0.3 + volAt(x, z) * 0.7);
+  scareNpcs(x, z, EXPLO_SCARE_RADIUS);
+  const s = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false }));
+  s.position.set(x, Math.max(0.6, y), z);
+  scene.add(s);
+  explosions.push({ mesh: s, born: performance.now() });
 
-  const npc = hit && hit.object.userData.npc;
-  if (npc && !npc.dead) hitNpc(npc);
+  const R = WEAPONS.rocket.radius;
+  for (const n of G.npcs) {   // scoring normal sur chaque victime (transfert possible !)
+    if (n.dead) continue;
+    if (Math.hypot(n.x - x, n.z - z) > R) continue;
+    n.lastHitAngle = Math.atan2(n.z - z, n.x - x);
+    bloodSplat(n.x, n.z, n.lastHitAngle, 20);
+    n.hp -= WEAPONS.rocket.dmg;
+    if (n.hp <= 0) {
+      if (n.isCulprit) culpritDown(n);
+      else killNpc(n);
+    }
+    if (G.gameOver) return;
+  }
+  for (const b of G.bots) {   // les bots aussi (+50 par down, l'explosion paie)
+    if (b.down) continue;
+    if (Math.hypot(b.x - x, b.z - z) < R) damageBot(b, WEAPONS.rocket.dmg, true);
+  }
+  const pd = Math.hypot(player.x - x, player.z - z);
+  if (pd < R) damagePlayer(WEAPONS.rocket.dmg * (1 - pd / R), 'TA PROPRE ROQUETTE');
+  shake(Math.max(0.006, 0.02 * (1 - Math.min(1, pd / 25))));
+  player.recoil += 0.02;
+}
+function updateExplosions() {
+  const now = performance.now();
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const e = explosions[i], age = now - e.born;
+    if (age > 260) {
+      scene.remove(e.mesh);
+      e.mesh.material.dispose();
+      e.mesh.geometry.dispose();
+      explosions.splice(i, 1);
+    } else {
+      const t = age / 260;
+      e.mesh.scale.setScalar(0.5 + t * WEAPONS.rocket.radius);
+      e.mesh.material.opacity = 0.85 * (1 - t);
+    }
+  }
 }
 
 // Scoring identique au 2D (2d.html L1347-1394) : exclu +10, suspect −malus, coupable → transfert
-function hitNpc(npc) {
+function hitNpc(npc, dmg = 12) {
   if (G.gameOver) return;
-  npc.hp -= GUN_DMG;
+  npc.hp -= dmg;
+  npc.lastHitAngle = Math.atan2(npc.z - player.z, npc.x - player.x);
+  bloodSplat(npc.x, npc.z, npc.lastHitAngle);
   npc.flashUntil = performance.now() + 60;
   for (const m of npc.meshes) m.material = flashMat;
   if (npc.hp <= 0) {
@@ -851,6 +1156,7 @@ function hitNpc(npc) {
 }
 function killNpc(npc) {
   killNpcVisual(npc);
+  G.kills++;
   if (isExcluded(npc)) {
     G.score += SCORE_GOOD;
     floatScore(npc, SCORE_GOOD);
@@ -860,6 +1166,8 @@ function killNpc(npc) {
     floatScore(npc, malus);
     errorFlash();
     sfx('wrong', 0.6);
+    // Secousse proportionnelle à la gravité de l'erreur (2D)
+    shake(0.008 + G.revealedClues.length * 0.002);
   }
   updateHud();
 }
@@ -868,12 +1176,14 @@ function killNpcVisual(npc) {
   npc.dead = true;
   npc.vx = npc.vz = 0;
   G.npcAlive--;
-  G.kills++;
   sfx('pop', 0.3 + volAt(npc.x, npc.z) * 0.7);
   if (G.tying && G.tying.npc === npc) cancelTie();
   rebuildTargets();
-  const dx = npc.x - player.x, dz = npc.z - player.z;
-  dying.push({ npc, start: performance.now(), yaw: Math.atan2(dx, dz) });
+  const a = npc.lastHitAngle ?? Math.atan2(npc.z - player.z, npc.x - player.x);
+  bloodPool(npc.x, npc.z, a);
+  deathPuffs(npc.x, npc.z);
+  witnessReaction(npc.x, npc.z);
+  dying.push({ npc, start: performance.now(), yaw: Math.atan2(Math.cos(a), Math.sin(a)) });
 }
 const dying = [];
 function updateDying() {
@@ -901,28 +1211,49 @@ function updateFlashes() {
   }
 }
 
-// --- Accusation canalisée (le « climax de vulnérabilité », version sans fouet) ---
+// --- LE FOUET (port du 2D) : E arme, clic = lash directionnel sans filtre,
+// ligotage = clic maintenu 10 s, immobile et désarmé, interrompu par tout dégât ---
+const whipMat = new THREE.MeshBasicMaterial({ color: 0xc9a06a, transparent: true, opacity: 0.9, depthWrite: false });
+const playerRope = new THREE.Mesh(GEO_BOX, getMat(0x8a5a2b));
+playerRope.visible = false;
+scene.add(playerRope);
+
 function aimedNpc() {
   const hit = raycastCenter();
   const npc = hit && hit.object.userData.npc;
   if (!npc || npc.dead) return null;
-  if (hit.distance > ACCUSE_RANGE) return null;
+  if (hit.distance > WHIP_RANGE) return null;
   return npc;
 }
-function tryStartAccuse() {
-  if (!G.finalPhase || G.gameOver || G.tying || !G.locked || player.down) return;
-  if (G.now < G.accuseCdUntil) return;
-  const npc = aimedNpc();
-  if (!npc) return;
-  if (isExcluded(npc)) {   // garde-fou pédagogique, comme le fouet 2D
+function toggleWhip() {
+  if (!G.finalPhase || G.gameOver || G.tying || !G.locked || player.down || !G.started) return;
+  G.whipArmed = !G.whipArmed;
+  buildViewmodel(G.whipArmed ? 'whip' : G.currentWeapon);
+  sfx('whip', 0.5);
+}
+function whipLash() {
+  if (G.tying || G.now < G.whipCdUntil) return;
+  G.whipCdUntil = G.now + WHIP_COOLDOWN;
+  sfx('whip');
+  vmKick = 1;
+  const hit = raycastCenter();   // attrape le PREMIER PNJ sur la trajectoire, sans filtre
+  const muzzle = new THREE.Vector3(0.26, -0.2, -0.5).applyMatrix4(camera.matrixWorld);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const to = (hit && hit.distance <= WHIP_RANGE) ? hit.point
+    : camera.position.clone().add(dir.multiplyScalar(WHIP_RANGE));
+  spawnTracer(muzzle, to, whipMat.clone());
+  const npc = hit && hit.distance <= WHIP_RANGE && hit.object.userData.npc;
+  if (!npc || npc.dead) return;
+  if (isExcluded(npc)) {   // avertissement immédiat, comme en 2D
     showBanner('Déjà hors de cause !', 'Les indices innocentent ce passant. Cherche encore.', 2200);
     sfx('wrong', 0.5);
     return;
   }
+  // Prise ! Ligotage : clic maintenu, immobile
   G.tying = { npc, start: G.now };
   npc.vx = npc.vz = 0;
-  npc.nextThink = G.now + 999999;   // maîtrisé : il ne bouge plus pendant le canal
-  sfx('whip');
+  npc.nextThink = G.now + 999999;   // maîtrisé : il ne bouge plus
   tieBar.style.display = 'block';
 }
 function cancelTie() {
@@ -930,36 +1261,128 @@ function cancelTie() {
   G.tying.npc.nextThink = G.now;
   G.tying = null;
   tieBar.style.display = 'none';
+  playerRope.visible = false;
 }
 function updateTie() {
   if (!G.tying) return;
   const npc = G.tying.npc;
   const { f, s } = moveInput();
   const moved = f !== 0 || s !== 0 || !player.grounded || player.sliding;
-  if (!G.eHeld || moved || npc.dead) { cancelTie(); return; }
-  const progress = (G.now - G.tying.start) / ACCUSE_TIME;
+  if (!G.mouseHeld || moved || npc.dead) { cancelTie(); return; }
+  // Corde joueur → PNJ
+  const a = new THREE.Vector3(player.x, player.y + 1.1, player.z);
+  const b = new THREE.Vector3(npc.x, 1.0, npc.z);
+  playerRope.visible = true;
+  playerRope.position.copy(a.clone().add(b).multiplyScalar(0.5));
+  playerRope.lookAt(b);
+  playerRope.scale.set(0.05, 0.05, Math.max(0.1, a.distanceTo(b)));
+
+  const progress = (G.now - G.tying.start) / CAPTURE_TIME;
   tieBar.firstElementChild.style.width = Math.min(100, progress * 100) + '%';
   if (progress >= 1) {
     cancelTie();
     if (npc.isCulprit) {
       G.score += SCORE_CULPRIT;
       floatScore(npc, SCORE_CULPRIT);
-      endGame(true, 'COUPABLE CAPTURÉ !', 'Le voleur de cookie est sous les verrous. La ville te doit un goûter.');
+      endGame(true, 'COUPABLE CAPTURÉ !', 'Le voleur de cookie est ligoté, VIVANT. La ville te doit un goûter.');
     } else {
       G.score += SCORE_WRONG_TIE;
       floatScore(npc, SCORE_WRONG_TIE);
       errorFlash();
       sfx('wrong');
       showBanner('MAUVAIS SUSPECT !', `${SCORE_WRONG_TIE} points. Il s'enfuit, furieux.`, 3000);
-      G.accuseCdUntil = G.now + ACCUSE_CD;
-      // Il fuit, traumatisé
-      const ang = Math.atan2(npc.x - player.x, npc.z - player.z);
-      npc.vx = Math.sin(ang) * NPC_FLEE_MAX;
-      npc.vz = Math.cos(ang) * NPC_FLEE_MAX;
+      G.whipCdUntil = G.now + WHIP_FAIL_CD;
+      const ang = Math.atan2(npc.z - player.z, npc.x - player.x);
+      npc.vx = Math.cos(ang) * NPC_FLEE_MAX;
+      npc.vz = Math.sin(ang) * NPC_FLEE_MAX;
       npc.nextThink = G.now + 2500;
       updateHud();
     }
   }
+}
+
+// ---------- EFFETS : gouttes de sang, puffs, témoins, screenshake ----------
+const particles = [];
+const bloodDropMat = new THREE.MeshBasicMaterial({ color: 0x7a1612 });
+const puffMat = new THREE.MeshBasicMaterial({ color: 0xf3ead8, transparent: true, opacity: 0.85 });
+function spawnParticle(x, y, z, vx, vy, vz, mat, size, stains) {
+  const m = new THREE.Mesh(GEO_BOX, mat);
+  m.scale.setScalar(size);
+  m.position.set(x, y, z);
+  scene.add(m);
+  particles.push({ mesh: m, vx, vy, vz, stains, born: performance.now() });
+}
+function updateParticles(dt) {
+  const now = performance.now();
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.vy -= 12 * dt;
+    p.mesh.position.x += p.vx * dt;
+    p.mesh.position.y += p.vy * dt;
+    p.mesh.position.z += p.vz * dt;
+    const grounded = p.mesh.position.y <= 0.03;
+    if (grounded || now - p.born > 900) {
+      if (grounded && p.stains) {
+        bloodStain(p.mesh.position.x, p.mesh.position.z, 0.04 + Math.random() * 0.07);
+      }
+      scene.remove(p.mesh);
+      particles.splice(i, 1);
+    }
+  }
+}
+// 14 gouttes projetées dans l'axe du tir, 55 % tachent le sol définitivement (2D)
+function bloodSplat(x, z, angle, count = 14) {
+  for (let i = 0; i < count; i++) {
+    const a = angle + (Math.random() - 0.5) * 0.9;
+    const sp = 2 + Math.random() * 4;
+    spawnParticle(x, 0.9 + Math.random() * 0.5, z,
+      Math.cos(a) * sp, 1 + Math.random() * 2, Math.sin(a) * sp,
+      bloodDropMat, 0.05 + Math.random() * 0.04, Math.random() < 0.55);
+  }
+}
+// Flaque de mort persistante : 45 % ronde + satellites, 55 % giclée dans l'axe (2D)
+function bloodPool(x, z, angle) {
+  if (Math.random() < 0.45) {
+    bloodStain(x, z, 0.45 + Math.random() * 0.25, 0.85);
+    for (let i = 0; i < 4; i++) {
+      const a = Math.random() * Math.PI * 2, d = 0.4 + Math.random() * 0.5;
+      bloodStain(x + Math.cos(a) * d, z + Math.sin(a) * d, 0.07 + Math.random() * 0.1);
+    }
+  } else {
+    bloodStainStretched(x + Math.cos(angle) * 0.3, z + Math.sin(angle) * 0.3,
+      angle, 0.7 + Math.random() * 0.4, 0.3 + Math.random() * 0.15, 0.85);
+    bloodStainStretched(x + Math.cos(angle) * 0.9, z + Math.sin(angle) * 0.9,
+      angle, 0.25 + Math.random() * 0.15, 0.12, 0.7);
+  }
+  const drops = 7 + Math.floor(Math.random() * 8);   // nuée de gouttelettes
+  for (let i = 0; i < drops; i++) {
+    const a = angle + (Math.random() - 0.5) * 1.6, d = 0.3 + Math.random() * 1.3;
+    bloodStain(x + Math.cos(a) * d, z + Math.sin(a) * d, 0.03 + Math.random() * 0.05, 0.6);
+  }
+}
+function deathPuffs(x, z) {
+  for (let i = 0; i < 5; i++) {
+    spawnParticle(x + (Math.random() - 0.5) * 0.8, 0.5 + Math.random() * 0.8,
+      z + (Math.random() - 0.5) * 0.8,
+      (Math.random() - 0.5) * 0.8, 1.2 + Math.random(), (Math.random() - 0.5) * 0.8,
+      puffMat, 0.12 + Math.random() * 0.1, false);
+  }
+}
+// Témoins : « ?! » au-dessus des PNJ proches (max 3), qui fuient
+function witnessReaction(x, z) {
+  let shown = 0;
+  for (const n of G.npcs) {
+    if (shown >= 3) break;
+    if (n.dead) continue;
+    if (n.nextThink > G.now + 5000) continue;
+    const d = Math.hypot(n.x - x, n.z - z);
+    if (d > 8 || d < 0.1) continue;
+    floatText(n.x, n.z, '?!', 'good', 2.2);
+    shown++;
+  }
+}
+function shake(amount) {
+  player.shake = Math.max(player.shake || 0, amount);
 }
 
 // ---------- S9. IA DES PNJ (port de 2d.html L2017-2041, 1594-1606) ----------
@@ -989,12 +1412,12 @@ function thinkNpc(npc) {
   }
 }
 // Un coup de feu fait fuir les PNJ alentour à l'opposé du point d'origine
-function scareNpcs(x, z) {
+function scareNpcs(x, z, radius = SCARE_RADIUS) {
   for (const n of G.npcs) {
     if (n.dead) continue;
     if (n.nextThink > G.now + 5000) continue;   // maîtrisé (accusation) : il ne fuit pas
     const d = Math.hypot(n.x - x, n.z - z);
-    if (d > SCARE_RADIUS) continue;
+    if (d > radius) continue;
     const ang = Math.atan2(n.z - z, n.x - x) + (Math.random() - 0.5) * 0.5;
     const speed = NPC_FLEE_MIN + Math.random() * (NPC_FLEE_MAX - NPC_FLEE_MIN);
     n.vx = Math.cos(ang) * speed;
@@ -1072,6 +1495,9 @@ function updateHud() {
   $('cAlive').textContent = G.npcAlive;
   $('cExcl').textContent = excl;
   $('cSusp').textContent = susp;
+  $('cBots').textContent = `${G.bots.filter(b => !b.down).length}/${BOT_DEFS.length}`;
+  $('lbLines').innerHTML = getStandings().map((e, i) =>
+    `<div style="color:${e.color}">${i + 1}. ${e.name}${e.down ? ' †' : ''} — ${e.score}</div>`).join('');
 }
 function updateTimerHud() {
   const roundEl = $('roundBox').querySelector('.round');
@@ -1082,22 +1508,26 @@ function updateTimerHud() {
     timerEl.classList.add('final');
     ms = Math.max(0, G.finalEndAt - G.now);
   } else {
-    roundEl.textContent = `MANCHE ${G.revealedClues.length + 1}/${MAX_ROUNDS}`;
+    roundEl.textContent = G.revealedClues.length === 0
+      ? 'PHASE DE LOOT' : `MANCHE ${G.revealedClues.length}/${MAX_ROUNDS}`;
     ms = Math.max(0, G.nextClueAt - G.now);
   }
   const s = Math.ceil(ms / 1000);
   timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
-function floatScore(npc, amount) {
-  const v = new THREE.Vector3(npc.x, 1.6, npc.z).project(camera);
+function floatText(x, z, text, cls, y = 1.6) {
+  const v = new THREE.Vector3(x, y, z).project(camera);
   if (v.z > 1) return;   // derrière la caméra
   const el = document.createElement('div');
-  el.className = 'float ' + (amount > 0 ? 'good' : 'bad');
-  el.textContent = (amount > 0 ? '+' : '') + amount;
+  el.className = 'float ' + cls;
+  el.textContent = text;
   el.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
   el.style.top = ((1 - (v.y + 1) / 2) * innerHeight) + 'px';
   hud.appendChild(el);
   setTimeout(() => el.remove(), 900);
+}
+function floatScore(npc, amount) {
+  floatText(npc.x, npc.z, (amount > 0 ? '+' : '') + amount, amount > 0 ? 'good' : 'bad');
 }
 function errorFlash() {
   hitFlashEl.style.opacity = 1;
@@ -1138,7 +1568,9 @@ function updateHpBar() {
 function damagePlayer(dmg, source) {
   if (player.down || G.gameOver) return;
   player.hp -= dmg;
-  if (dmg >= 1) sfx('hurt');
+  if (dmg >= 1) { sfx('hurt'); shake(0.006); }
+  cancelHeal();                     // tout dégât interrompt le soin...
+  if (G.tying) cancelTie();         // ...et le ligotage (comme en 2D)
   updateHpBar();
   if (player.hp <= 0) downPlayer(source);
 }
@@ -1149,6 +1581,8 @@ function downPlayer(source) {
   player.sliding = false;
   G.mouseHeld = false;
   cancelTie();
+  cancelHeal();
+  dropPlayerEquipment();            // down = on lâche tout, retour pistolet
   sfx('down');
   downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${source} !`;
   downOverlay.style.display = 'flex';
@@ -1163,6 +1597,586 @@ function respawnPlayer() {
   updateHpBar();
 }
 
+// ---------- Armes : sélection, hotbar, soin canalisé ----------
+const healBar = $('healBar');
+function selectWeapon(key) {
+  if (!G.weapons[key].owned) return;
+  G.currentWeapon = key;
+  G.whipArmed = false;   // choisir une arme désarme le fouet
+  buildViewmodel(key);
+  updateHotbar();
+}
+function updateHotbar() {
+  for (const el of document.querySelectorAll('#hotbar .slot')) {
+    const k = el.dataset.w;
+    if (k === 'medkit') {
+      el.querySelector('.a').textContent = '×' + G.medkits;
+      el.classList.toggle('off', G.medkits === 0);
+      el.classList.toggle('sel', !!G.healing);
+      continue;
+    }
+    const st = G.weapons[k];
+    el.querySelector('.a').textContent = WEAPONS[k].infinite ? '∞' : st.ammo;
+    el.classList.toggle('off', !st.owned);
+    el.classList.toggle('sel', G.currentWeapon === k);
+  }
+}
+function startHeal() {
+  if (G.healing || G.tying || player.down || G.gameOver || !G.started) return;
+  if (G.medkits <= 0 || player.hp >= PLAYER_MAX_HP) return;
+  G.healing = { start: G.now };
+  healBar.style.display = 'block';
+  updateHotbar();
+}
+function cancelHeal() {
+  if (!G.healing) return;
+  G.healing = null;
+  healBar.style.display = 'none';
+  updateHotbar();
+}
+function updateHeal() {
+  if (!G.healing) return;
+  const t = (G.now - G.healing.start) / HEAL_TIME;
+  healBar.firstElementChild.style.width = Math.min(100, t * 100) + '%';
+  if (t >= 1) {
+    player.hp = Math.min(PLAYER_MAX_HP, player.hp + MEDKIT_HEAL);
+    G.medkits--;
+    sfx('heal');
+    updateHpBar();
+    cancelHeal();
+  }
+}
+
+// ---------- Loot : caisses, ramassage, drop à la mort ----------
+const LOOT_STYLE = {   // indicateur flottant au-dessus de la caisse
+  rifle:   { hex: 0x3f3a30, w: 0.5,  h: 0.14, d: 0.14 },
+  shotgun: { hex: 0x6e4a2f, w: 0.42, h: 0.16, d: 0.16 },
+  rocket:  { hex: 0xc75b4a, w: 0.18, h: 0.18, d: 0.5 },
+  medkit:  { hex: 0xf0ede4, w: 0.4,  h: 0.22, d: 0.4 }
+};
+function spawnPickup(type, x, z, ammo) {
+  x = Math.max(-HALF, Math.min(HALF, x));
+  z = Math.max(-HALF, Math.min(HALF, z));
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(GEO_BOX, getMat(0x8a6a44));
+  base.scale.set(0.55, 0.35, 0.55);
+  base.position.y = 0.175;
+  const st = LOOT_STYLE[type];
+  const item = new THREE.Mesh(GEO_BOX, getMat(st.hex));
+  item.scale.set(st.w, st.h, st.d);
+  item.position.y = 0.62;
+  g.add(base, item);
+  if (type === 'medkit') {   // croix rouge
+    const c1 = new THREE.Mesh(GEO_BOX, getMat(0xc75b4a));
+    c1.scale.set(0.3, 0.06, 0.1); c1.position.y = 0.77;
+    const c2 = new THREE.Mesh(GEO_BOX, getMat(0xc75b4a));
+    c2.scale.set(0.1, 0.06, 0.3); c2.position.y = 0.77;
+    g.add(c1, c2);
+  }
+  g.position.set(x, 0, z);
+  scene.add(g);
+  G.loot.push({ type, x, z, ammo: ammo ?? AMMO_PACK[type], group: g, item });
+}
+function spawnInitialLoot() {
+  for (const [type, count] of Object.entries(LOOT_COUNTS)) {
+    for (let i = 0; i < count; i++) {
+      let x, z;
+      if (Math.random() < HOT_DROP_SHARE) {   // hot drop central
+        const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 11;
+        x = Math.cos(a) * r; z = Math.sin(a) * r;
+      } else {
+        x = (Math.random() * 2 - 1) * (HALF - 3);
+        z = (Math.random() * 2 - 1) * (HALF - 3);
+      }
+      spawnPickup(type, x, z);
+    }
+  }
+}
+function pickupLoot(l, idx) {
+  if (l.type === 'medkit') {
+    if (G.medkits >= MEDKIT_MAX) return;   // plein : la caisse reste au sol
+    G.medkits++;
+    floatText(l.x, l.z, '+ Medkit', 'good', 1.0);
+  } else {
+    const st = G.weapons[l.type];
+    const wasOwned = st.owned;
+    st.owned = true;
+    st.ammo += l.ammo;
+    floatText(l.x, l.z, `+ ${WEAPONS[l.type].name} (${l.ammo})`, 'good', 1.0);
+    if (!wasOwned) selectWeapon(l.type);   // première prise = équipée auto
+  }
+  sfx('pickup');
+  scene.remove(l.group);
+  G.loot.splice(idx, 1);
+  updateHotbar();
+}
+function updateLoot(dt) {
+  for (let i = G.loot.length - 1; i >= 0; i--) {
+    const l = G.loot[i];
+    l.item.rotation.y += dt * 2;
+    l.item.position.y = 0.62 + Math.sin(G.now / 400 + i) * 0.05;
+    if (!player.down && Math.hypot(player.x - l.x, player.z - l.z) < 1.3) pickupLoot(l, i);
+  }
+}
+function dropPlayerEquipment() {
+  const drop = (type, ammo) => spawnPickup(type,
+    player.x + (Math.random() - 0.5) * 3, player.z + (Math.random() - 0.5) * 3, ammo);
+  for (const t of ['rifle', 'shotgun', 'rocket']) {
+    const st = G.weapons[t];
+    if (st.owned && st.ammo > 0) drop(t, st.ammo);
+    st.owned = false;
+    st.ammo = 0;
+  }
+  for (let i = 0; i < G.medkits; i++) drop('medkit');
+  G.medkits = 0;
+  G.currentWeapon = 'pistol';
+  G.whipArmed = false;
+  buildViewmodel('pistol');
+  updateHotbar();
+}
+
+// ---------- BOTS : IA à 5 priorités (port de 2d.html L883-1278) ----------
+const botBullets = [];
+const botBulletMat = new THREE.MeshBasicMaterial({ color: 0xffb36e });
+
+function buildBotCharacter(def) {
+  const group = new THREE.Group();
+  const meshes = [];
+  block(group, meshes, 0.5, 0.6, 0.3, 0x4a3b2a, 0, 0.3, 0);
+  block(group, meshes, 0.66, 0.68, 0.38, def.hex, 0, 0.94, 0);   // torse = couleur du bot
+  block(group, meshes, 0.5, 0.5, 0.5, SKIN, 0, 1.53, 0);
+  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, -0.11, 1.58, 0.26);
+  block(group, meshes, 0.07, 0.1, 0.03, 0x181818, 0.11, 1.58, 0.26);
+  block(group, meshes, 0.58, 0.2, 0.58, def.hair, 0, 1.88, 0);
+  block(group, meshes, 0.09, 0.09, 0.5, 0x3f3a30, 0.24, 1.1, 0.3);   // fusil en main
+  const hitbox = new THREE.Mesh(GEO_BOX, hitboxMat);
+  hitbox.scale.set(0.75, 2.1, 0.55);
+  hitbox.position.y = 1.05;
+  group.add(hitbox);
+  return { group, meshes, hitbox };
+}
+function spawnBot(def, idx) {
+  const p = G.spawnPoints[idx + 1] || randomPointInZone();
+  const { group, meshes, hitbox } = buildBotCharacter(def);
+  group.position.set(p.x, 0, p.z);
+  scene.add(group);
+  const tag = document.createElement('div');
+  tag.className = 'botTag';
+  tag.innerHTML = `<span style="color:${def.color}">${def.name}</span>` +
+    `<div class="bhp"><div style="background:${def.color}"></div></div>`;
+  hud.appendChild(tag);
+  const tie = document.createElement('div');
+  tie.className = 'botTie';
+  tie.innerHTML = `<div style="background:${def.color}"></div>`;
+  hud.appendChild(tie);
+  const rope = new THREE.Mesh(GEO_BOX, getMat(0x8a5a2b));
+  rope.visible = false;
+  scene.add(rope);
+  const bot = {
+    name: def.name, color: def.color, hex: def.hex,
+    x: p.x, z: p.z, vx: 0, vz: 0, hp: BOT_HP, score: 0,
+    down: false, downUntil: 0, nextThink: 0, fireAt: 0,
+    mode: 'wander', targetNpc: null, tieTarget: null, tieProgress: 0,
+    rejected: new Set(), roamTarget: null, aim: 0, zoneAcc: 0,
+    walkPhase: Math.random() * 10,
+    group, meshes, hitbox, tagEl: tag, tieEl: tie, rope
+  };
+  hitbox.userData.bot = bot;
+  G.bots.push(bot);
+  return bot;
+}
+
+function getStandings() {
+  return [
+    { name: 'YOU', score: G.score, color: '#7dd94a', down: player.down },
+    ...G.bots.map(b => ({ name: b.name, score: b.score, color: b.color, down: b.down }))
+  ].sort((a, b) => b.score - a.score);
+}
+
+function damageBot(bot, dmg, fromPlayer) {
+  if (!bot || bot.down || G.gameOver) return;
+  bot.hp -= dmg;
+  bot.tieProgress = 0;   // tout dégât interrompt son ligotage
+  for (const m of bot.meshes) m.material = flashMat;
+  setTimeout(() => {
+    for (const m of bot.meshes)
+      m.material = bot.down ? getGrayMat(m.userData.hex) : getMat(m.userData.hex);
+  }, 60);
+  if (bot.hp <= 0) downBot(bot, fromPlayer);
+}
+function downBot(bot, fromPlayer) {
+  bot.down = true;
+  bot.downUntil = G.now + RESPAWN_MS;
+  bot.hp = 0;
+  bot.tieTarget = null;
+  bot.tieProgress = 0;
+  bot.vx = bot.vz = 0;
+  hideBotTie(bot);
+  bot.group.rotation.x = -Math.PI / 2;
+  bot.group.position.y = 0.25;
+  for (const m of bot.meshes) m.material = getGrayMat(m.userData.hex);
+  rebuildTargets();
+  sfx('down', 0.4 + volAt(bot.x, bot.z) * 0.6);
+  // Drop d'équipement : le PvP devient une source de loot
+  const r = Math.random();
+  const dropType = r < 0.45 ? 'rifle' : r < 0.7 ? 'medkit' : r < 0.9 ? 'shotgun' : 'rocket';
+  spawnPickup(dropType, bot.x + (Math.random() - 0.5) * 3, bot.z + (Math.random() - 0.5) * 3);
+  if (fromPlayer) {
+    G.score += SCORE_BOT;
+    floatText(bot.x, bot.z, '+' + SCORE_BOT, 'good');
+  }
+  floatText(bot.x, bot.z, `${bot.name} est down !`, 'good', 2.4);
+  updateHud();
+}
+function respawnBot(bot) {
+  const p = randomPointInZone();
+  bot.x = p.x; bot.z = p.z;
+  bot.hp = BOT_HP;
+  bot.down = false;
+  bot.group.rotation.x = 0;
+  bot.group.position.y = 0;
+  for (const m of bot.meshes) m.material = getMat(m.userData.hex);
+  bot.nextThink = 0;
+  rebuildTargets();
+  updateHud();
+}
+
+function nearestSuspect(x, z, rejected) {
+  let best = null, bestD = Infinity;
+  for (const n of G.npcs) {
+    if (n.dead || isExcluded(n) || rejected.has(n)) continue;
+    if (G.tying && G.tying.npc === n) continue;   // déjà pris par le joueur
+    const d = Math.hypot(x - n.x, z - n.z);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+function nearestExcluded(x, z, maxDist) {
+  let best = null, bestD = maxDist;
+  for (const n of G.npcs) {
+    if (n.dead || !isExcluded(n)) continue;
+    const d = Math.hypot(x - n.x, z - n.z);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+function botFire(bot, angle, spread, cosmetic, cd) {
+  if (G.now < bot.fireAt) return false;
+  bot.fireAt = G.now + cd + Math.random() * 150;
+  sfx('rifle', volAt(bot.x, bot.z) * 0.7);
+  const a = angle + (Math.random() - 0.5) * spread;
+  const x = bot.x + Math.cos(a) * 0.8, z = bot.z + Math.sin(a) * 0.8;
+  const m = new THREE.Mesh(GEO_BOX, botBulletMat);
+  m.scale.set(0.1, 0.1, 0.34);
+  m.position.set(x, 1.25, z);
+  m.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
+  scene.add(m);
+  botBullets.push({ mesh: m, x, z, vx: Math.cos(a) * BOT_BULLET_SPEED,
+    vz: Math.sin(a) * BOT_BULLET_SPEED, born: G.now, owner: bot, cosmetic });
+  scareNpcs(x, z);
+  return true;
+}
+// Purge "facile" : le kill est résolu aux dés, la balle n'est que du visuel (leçon 2D)
+function botPurgeShot(bot, npc) {
+  const ang = Math.atan2(npc.z - bot.z, npc.x - bot.x);
+  if (!botFire(bot, ang, 0.06, true, BOT_PURGE_CD)) return;
+  let target = npc;
+  if (Math.random() < BOT_PURGE_MISTAKE) {   // la rafale touche le voisin
+    let best = null, bestD = 5.7;
+    for (const n of G.npcs) {
+      if (n.dead || n === npc) continue;
+      const d = Math.hypot(npc.x - n.x, npc.z - n.z);
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    if (best) target = best;
+  }
+  if (Math.random() > BOT_PURGE_HIT) return;   // raté propre
+  // Impact différé le temps que la balle "arrive" (cohérence visuelle)
+  const flightMs = Math.hypot(bot.x - target.x, bot.z - target.z) / BOT_BULLET_SPEED * 1000;
+  setTimeout(() => {
+    if (!target.dead && !G.gameOver) applyBotShotOnNpc(bot, target);
+  }, flightMs);
+}
+function applyBotShotOnNpc(bot, npc) {
+  npc.hp -= BOT_BULLET_DMG;
+  npc.lastHitAngle = Math.atan2(npc.z - bot.z, npc.x - bot.x);
+  bloodSplat(npc.x, npc.z, npc.lastHitAngle);
+  npc.flashUntil = performance.now() + 60;
+  for (const m of npc.meshes) m.material = flashMat;
+  if (npc.hp <= 0) {
+    if (npc.isCulprit) { culpritDown(npc, bot); return; }
+    bot.score += isExcluded(npc) ? SCORE_GOOD : currentMalus();
+    killNpcVisual(npc);
+    updateHud();
+  }
+}
+
+// IA : priorités = combat > migration > capture > purge > patrouille
+function thinkBot(bot) {
+  if (G.now < bot.nextThink) return;
+  bot.nextThink = G.now + 220 + Math.random() * 120;
+  const dCenter = Math.hypot(bot.x, bot.z);
+  const dPlayer = Math.hypot(bot.x - player.x, bot.z - player.z);
+
+  // 1. Le joueur est à portée → combat (approche / recul / strafe)
+  if (!player.down && dPlayer < BOT_VIEW) {
+    bot.mode = 'fight';
+    let ang = Math.atan2(player.z - bot.z, player.x - bot.x);
+    if (dPlayer < 9.5) ang += Math.PI;
+    else if (dPlayer <= 16.5) ang += (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2;
+    bot.vx = Math.cos(ang) * BOT_SPEED;
+    bot.vz = Math.sin(ang) * BOT_SPEED;
+    return;
+  }
+  // 2. Hors zone → migrer vers le centre
+  if (dCenter > G.zoneR * 0.92) {
+    bot.mode = 'migrate';
+    const ang = Math.atan2(-bot.z, -bot.x) + (Math.random() - 0.5) * 0.6;
+    bot.vx = Math.cos(ang) * BOT_SPEED;
+    bot.vz = Math.sin(ang) * BOT_SPEED;
+    return;
+  }
+  // 3. Phase finale → aller capturer un suspect
+  if (G.finalPhase) {
+    bot.mode = 'capture';
+    const t = bot.tieTarget;
+    const invalid = !t || t.dead || bot.rejected.has(t) || (G.tying && G.tying.npc === t);
+    if (invalid) {
+      // Erreur de lecture : parfois le bot cible un PNJ déjà exclu (→ −100 assuré)
+      if (Math.random() < BOT_TIE_ERROR) {
+        bot.tieTarget = nearestExcluded(bot.x, bot.z, 38) || nearestSuspect(bot.x, bot.z, bot.rejected);
+      } else {
+        bot.tieTarget = nearestSuspect(bot.x, bot.z, bot.rejected);
+      }
+      bot.tieProgress = 0;
+    }
+    if (bot.tieTarget) {
+      const d = Math.hypot(bot.tieTarget.x - bot.x, bot.tieTarget.z - bot.z);
+      if (d > 2.9) {
+        const ang = Math.atan2(bot.tieTarget.z - bot.z, bot.tieTarget.x - bot.x);
+        bot.vx = Math.cos(ang) * BOT_SPEED;
+        bot.vz = Math.sin(ang) * BOT_SPEED;
+      } else { bot.vx = bot.vz = 0; }
+    } else { bot.vx = bot.vz = 0; }
+    return;
+  }
+  // 4. Purge des exclus (avec erreurs d'identification calibrées)
+  const t = bot.targetNpc;
+  const tgtInvalid = !t || t.dead || Math.hypot(t.x - bot.x, t.z - bot.z) > 57;
+  if (tgtInvalid) {
+    bot.targetNpc = nearestExcluded(bot.x, bot.z, 51);
+    if (bot.targetNpc && Math.random() < BOT_TARGET_ERROR) {
+      const wrong = nearestSuspect(bot.targetNpc.x, bot.targetNpc.z, bot.rejected);
+      if (wrong && Math.hypot(bot.targetNpc.x - wrong.x, bot.targetNpc.z - wrong.z) < 16) {
+        bot.targetNpc = wrong;   // "je te jure qu'il avait une casquette !"
+      }
+    }
+  }
+  if (bot.targetNpc) {
+    bot.mode = 'purge';
+    const d = Math.hypot(bot.targetNpc.x - bot.x, bot.targetNpc.z - bot.z);
+    if (d > 9.5) {
+      const ang = Math.atan2(bot.targetNpc.z - bot.z, bot.targetNpc.x - bot.x);
+      bot.vx = Math.cos(ang) * BOT_SPEED * 0.9;
+      bot.vz = Math.sin(ang) * BOT_SPEED * 0.9;
+    } else { bot.vx = bot.vz = 0; }
+    return;
+  }
+  // 5. Patrouille vers un point lointain de la zone
+  bot.mode = 'wander';
+  if (!bot.roamTarget || Math.hypot(bot.roamTarget.x - bot.x, bot.roamTarget.z - bot.z) < 5) {
+    bot.roamTarget = randomPointInZone();
+  }
+  const rang = Math.atan2(bot.roamTarget.z - bot.z, bot.roamTarget.x - bot.x);
+  bot.vx = Math.cos(rang) * BOT_SPEED * 0.7;
+  bot.vz = Math.sin(rang) * BOT_SPEED * 0.7;
+}
+
+function resolveBotTie(bot, npc) {
+  hideBotTie(bot);
+  if (npc.isCulprit) {
+    endGame(false, `${bot.name.toUpperCase()} A CAPTURÉ LE COUPABLE !`,
+      'Un autre détective a été plus rapide. Le cookie est vengé... mais pas par toi.');
+    return;
+  }
+  bot.score += SCORE_WRONG_TIE;   // mauvaise pioche : −100 pour le bot aussi
+  floatText(npc.x, npc.z, String(SCORE_WRONG_TIE), 'bad');
+  bot.rejected.add(npc);
+  bot.tieTarget = null;
+  bot.tieProgress = 0;
+  const ang = Math.atan2(npc.z - bot.z, npc.x - bot.x);
+  npc.vx = Math.cos(ang) * 4.8;
+  npc.vz = Math.sin(ang) * 4.8;
+  npc.nextThink = G.now + 2200;
+  updateHud();
+}
+
+function showBotTie(bot, npc) {
+  const v = new THREE.Vector3(npc.x, 2.3, npc.z).project(camera);
+  if (v.z <= 1) {
+    bot.tieEl.style.display = 'block';
+    bot.tieEl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    bot.tieEl.style.top = ((1 - (v.y + 1) / 2) * innerHeight) + 'px';
+    bot.tieEl.firstElementChild.style.width = Math.min(100, bot.tieProgress / CAPTURE_TIME * 100) + '%';
+  } else bot.tieEl.style.display = 'none';
+  const a = new THREE.Vector3(bot.x, 1.1, bot.z), b = new THREE.Vector3(npc.x, 1.0, npc.z);
+  bot.rope.visible = true;
+  bot.rope.position.copy(a.clone().add(b).multiplyScalar(0.5));
+  bot.rope.lookAt(b);
+  bot.rope.scale.set(0.05, 0.05, Math.max(0.1, a.distanceTo(b)));
+}
+function hideBotTie(bot) {
+  bot.tieEl.style.display = 'none';
+  bot.rope.visible = false;
+}
+
+function updateBots(dt) {
+  for (const bot of G.bots) {
+    if (bot.down) {
+      if (G.now >= bot.downUntil) respawnBot(bot);
+      continue;
+    }
+    thinkBot(bot);
+
+    // Dégâts de zone (les bots aussi)
+    if (Math.hypot(bot.x, bot.z) > G.zoneR) {
+      bot.zoneAcc += (3 + G.zonePhase * 2.5) * dt;
+      if (bot.zoneAcc >= 1) {
+        const dmg = Math.floor(bot.zoneAcc);
+        bot.zoneAcc -= dmg;
+        damageBot(bot, dmg, false);
+        if (bot.down) continue;
+      }
+    }
+
+    // Déplacement + collisions décor
+    bot.x += bot.vx * dt;
+    bot.z += bot.vz * dt;
+    bot.x = Math.max(-HALF, Math.min(HALF, bot.x));
+    bot.z = Math.max(-HALF, Math.min(HALF, bot.z));
+    for (const o of obstacles) {
+      const nx = Math.max(o.minX, Math.min(bot.x, o.maxX));
+      const nz = Math.max(o.minZ, Math.min(bot.z, o.maxZ));
+      const dx = bot.x - nx, dz = bot.z - nz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < 0.16 && d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        bot.x = nx + (dx / d) * 0.4;
+        bot.z = nz + (dz / d) * 0.4;
+      }
+    }
+
+    // Soin opportuniste sur les medkits croisés
+    if (bot.hp < BOT_HP * 0.75) {
+      for (let i = G.loot.length - 1; i >= 0; i--) {
+        const l = G.loot[i];
+        if (l.type === 'medkit' && Math.hypot(bot.x - l.x, bot.z - l.z) < 1.3) {
+          bot.hp = Math.min(BOT_HP, bot.hp + MEDKIT_HEAL);
+          scene.remove(l.group);
+          G.loot.splice(i, 1);
+          sfx('pickup', volAt(bot.x, bot.z) * 0.6);
+          break;
+        }
+      }
+    }
+
+    // Visée & tir
+    let aimTarget = null;
+    if (bot.mode === 'fight' && !player.down) aimTarget = player;
+    else if (bot.mode === 'purge' && bot.targetNpc && !bot.targetNpc.dead) aimTarget = bot.targetNpc;
+    if (aimTarget) {
+      bot.aim = Math.atan2(aimTarget.z - bot.z, aimTarget.x - bot.x);
+      const d = Math.hypot(aimTarget.x - bot.x, aimTarget.z - bot.z);
+      if (bot.mode === 'fight') {
+        if (d < 26.7) botFire(bot, bot.aim, 0.22, false, BOT_FIRE_CD);   // vraies balles
+      } else if (d < 16.5) {
+        botPurgeShot(bot, aimTarget);   // PNJ : résolution aux dés
+      }
+    } else if (Math.hypot(bot.vx, bot.vz) > 0.3) {
+      bot.aim = Math.atan2(bot.vz, bot.vx);
+    }
+
+    // Ligotage (phase finale) — victoire du bot = ta défaite
+    if (bot.mode === 'capture' && bot.tieTarget && !bot.tieTarget.dead) {
+      const npc = bot.tieTarget;
+      if (Math.hypot(npc.x - bot.x, npc.z - bot.z) < 3.8) {
+        bot.vx = bot.vz = 0;
+        npc.vx = npc.vz = 0;
+        npc.nextThink = G.now + 400;
+        bot.tieProgress += dt * 1000;
+        showBotTie(bot, npc);
+        if (bot.tieProgress >= CAPTURE_TIME) resolveBotTie(bot, npc);
+      } else hideBotTie(bot);
+    } else hideBotTie(bot);
+
+    // Rendu : position, orientation vers la visée, bob de marche
+    const moving = Math.hypot(bot.vx, bot.vz) > 0.3;
+    if (moving) bot.walkPhase += dt * 9;
+    bot.group.position.set(bot.x, moving ? Math.abs(Math.sin(bot.walkPhase)) * 0.06 : 0, bot.z);
+    const targetYaw = Math.atan2(Math.cos(bot.aim), Math.sin(bot.aim));
+    let dy = targetYaw - bot.group.rotation.y;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    bot.group.rotation.y += dy * Math.min(1, 8 * dt);
+  }
+}
+
+function updateBotBullets(dt) {
+  for (let i = botBullets.length - 1; i >= 0; i--) {
+    const b = botBullets[i];
+    b.x += b.vx * dt;
+    b.z += b.vz * dt;
+    b.mesh.position.set(b.x, 1.25, b.z);
+    let dead = G.now - b.born > 1300 || Math.abs(b.x) > HALF || Math.abs(b.z) > HALF;
+    if (!dead && !b.cosmetic) {
+      for (const o of obstacles) {
+        if (b.x > o.minX && b.x < o.maxX && b.z > o.minZ && b.z < o.maxZ) { dead = true; break; }
+      }
+      if (!dead && !player.down && Math.hypot(b.x - player.x, b.z - player.z) < 0.5) {
+        damagePlayer(BOT_BULLET_DMG, b.owner.name.toUpperCase());
+        dead = true;
+      }
+      if (!dead) {
+        for (const n of G.npcs) {
+          if (n.dead) continue;
+          if (Math.hypot(b.x - n.x, b.z - n.z) < 0.45) {
+            n.hp -= 1;   // balle perdue : érosion légère, comme en 2D
+            n.flashUntil = performance.now() + 60;
+            for (const m of n.meshes) m.material = flashMat;
+            if (n.hp <= 0) {
+              if (n.isCulprit) culpritDown(n, b.owner);
+              else {
+                b.owner.score += isExcluded(n) ? SCORE_GOOD : currentMalus();
+                killNpcVisual(n);
+                updateHud();
+              }
+            }
+            dead = true;
+            break;
+          }
+        }
+      }
+    }
+    if (dead) {
+      scene.remove(b.mesh);
+      botBullets.splice(i, 1);
+    }
+  }
+}
+
+function drawBotTags() {
+  for (const bot of G.bots) {
+    const v = new THREE.Vector3(bot.x, 2.5, bot.z).project(camera);
+    if (v.z > 1) { bot.tagEl.style.display = 'none'; continue; }
+    bot.tagEl.style.display = 'block';
+    bot.tagEl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    bot.tagEl.style.top = ((1 - (v.y + 1) / 2) * innerHeight) + 'px';
+    bot.tagEl.querySelector('span').textContent = bot.name + (bot.down ? ' (down)' : '');
+    bot.tagEl.querySelector('.bhp > div').style.width = Math.max(0, bot.hp / BOT_HP * 100) + '%';
+  }
+}
+
 // ---------- Minimap (zone + joueur) ----------
 const mmCtx = $('minimap').getContext('2d');
 function drawMinimap() {
@@ -1173,6 +2187,13 @@ function drawMinimap() {
   mmCtx.beginPath();
   mmCtx.arc(cx, cz, G.zoneR * s, 0, Math.PI * 2);
   mmCtx.stroke();
+  for (const bot of G.bots) {   // bots : points colorés
+    if (bot.down) continue;
+    mmCtx.fillStyle = bot.color;
+    mmCtx.beginPath();
+    mmCtx.arc(cx + bot.x * s, cz + bot.z * s, 2.5, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
   const px = cx + player.x * s, pz = cz + player.z * s;
   mmCtx.fillStyle = '#fff';
   mmCtx.beginPath();
@@ -1194,7 +2215,10 @@ function endGame(win, title, text) {
     $('endTitle').textContent = title;
     $('endTitle').style.color = win ? '#7dd94a' : '#ff6a55';
     $('endText').textContent = text;
-    $('endStats').textContent = `Score final : ${G.score} • Éliminations : ${G.kills}`;
+    $('endStats').innerHTML = `Score final : ${G.score} • Éliminations : ${G.kills}` +
+      `<br><span style="font-size:15px;color:#c9b183">` +
+      getStandings().map((e, i) => `${i + 1}. ${e.name} — ${e.score}`).join(' &nbsp;·&nbsp; ') +
+      `</span>`;
     $('endScreen').style.display = 'flex';
     hud.style.display = 'none';
   }, 700);
@@ -1236,9 +2260,12 @@ function startGame() {
   culprit.isCulprit = true;
   G.culpritAttrs = culprit.attrs;
   initCluePool();
+  spawnInitialLoot();
+  BOT_DEFS.forEach((def, i) => spawnBot(def, i));
   rebuildTargets();
   updateHud();
-  showBanner('MANCHE 1', `Observe la foule… premier indice dans ${CLUE_INTERVAL / 1000} s !`, 4500);
+  updateHotbar();
+  showBanner('PHASE DE LOOT', `Ramasse des caisses ! Premier indice dans ${CLUE_INTERVAL / 1000} s.`, 4500);
 }
 
 // ---------- S11. BOUCLE PRINCIPALE ----------
@@ -1268,6 +2295,12 @@ function animate() {
 
     if (G.mouseHeld) shoot();
     updateTie();
+    updateHeal();
+    updateLoot(dt);
+    updateRockets(dt);
+    updateBots(dt);
+    updateBotBullets(dt);
+    drawBotTags();
 
     // Cadence des manches (pattern 2D : now >= nextClueAt → startRound)
     if (!G.finalPhase && G.now >= G.nextClueAt) startRound();
@@ -1275,9 +2308,18 @@ function animate() {
       endGame(false, 'LE COUPABLE S\'EST ENFUI…', 'Le temps est écoulé. Quelque part, quelqu\'un croque TON cookie.');
     }
 
-    // Prompt d'accusation
-    if (G.finalPhase && !G.tying && G.now >= G.accuseCdUntil) {
-      accusePrompt.style.display = aimedNpc() ? 'block' : 'none';
+    // Prompt du fouet (phase finale)
+    if (G.finalPhase && !G.tying && !player.down) {
+      if (!G.whipArmed) {
+        accusePrompt.innerHTML = '<b>E</b> — armer le fouet';
+        accusePrompt.style.display = 'block';
+      } else if (aimedNpc()) {
+        accusePrompt.innerHTML = '<b>CLIC</b> — coup de fouet ! (maintenir pour ligoter, 10 s)';
+        accusePrompt.style.display = 'block';
+      } else {
+        accusePrompt.innerHTML = 'FOUET ARMÉ — approche-toi d\'un suspect (E pour ranger)';
+        accusePrompt.style.display = 'block';
+      }
     } else {
       accusePrompt.style.display = 'none';
     }
@@ -1293,6 +2335,9 @@ function animate() {
   updateDying();
   updateFlashes();
   updateTracers();
+  updateExplosions();
+  updateParticles(dt);
+  if (bloodDirty) { bloodTex.needsUpdate = true; bloodDirty = false; }
   renderer.render(scene, camera);
 }
 animate();
