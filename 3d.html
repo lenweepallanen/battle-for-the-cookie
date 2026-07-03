@@ -243,6 +243,8 @@ const EYE = 1.62;
 const EYE_SLIDE = 0.95;
 const SENS = 0.0022;               // rad / px souris
 const PLAYER_R = 0.35;             // rayon de collision
+const PLAYER_H = 1.7;              // hauteur de collision
+const STEP_UP = 0.42;              // rebord franchissable sans sauter (marches, parapets)
 
 // Arsenal — port du 2D, distances en mètres (×140/2200), tir raycast hitscan
 const WEAPONS = {
@@ -502,22 +504,124 @@ zoneWall.position.y = 7;
 zoneWall.scale.set(ZONE_START_R, 1, ZONE_START_R);
 scene.add(zoneWall);
 
-// Décor blocky : caisses + buissons, déterministes, avec AABB (collision + cover)
-const obstacles = [];        // { minX, maxX, minZ, maxZ }
+// Décor blocky : AABB 3D (minY/maxY) — collision, cover ET verticalité
+const obstacles = [];        // { minX, maxX, minY, maxY, minZ, maxZ }
 const obstacleMeshes = [];
 const GEO_BOX = new THREE.BoxGeometry(1, 1, 1);
-function addObstacle(x, z, w, h, d, hex) {
+function addObstacle(x, z, w, h, d, hex, y0 = 0) {
   const m = new THREE.Mesh(GEO_BOX, new THREE.MeshLambertMaterial({ color: hex }));
   m.scale.set(w, h, d);
-  m.position.set(x, h / 2, z);
+  m.position.set(x, y0 + h / 2, z);
   scene.add(m);
   obstacleMeshes.push(m);
-  obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+  obstacles.push({ minX: x - w / 2, maxX: x + w / 2, minY: y0, maxY: y0 + h,
+                   minZ: z - d / 2, maxZ: z + d / 2 });
 }
+// Un point (x,z) est-il dans l'emprise au sol d'un solide ? (spawns, loot, patrouilles)
+function footprintBlocked(x, z, pad = 0.6) {
+  for (const o of obstacles) {
+    if (o.minY > 1.2) continue;   // linteaux, toits : on passe dessous
+    if (x > o.minX - pad && x < o.maxX + pad && z > o.minZ - pad && z < o.maxZ + pad) return true;
+  }
+  return false;
+}
+
+// --- Constructeurs de structures ---
+// Escalier : marches pleines (le step-up du joueur les gravit) jusqu'à topH
+function addStairs(x, z, dx, dz, width, topH, hex = 0x9a8a6a) {
+  const n = Math.ceil(topH / 0.3), stepH = topH / n, stepD = 0.42;
+  for (let i = 0; i < n; i++) {
+    const cx = x + dx * (i + 0.5) * stepD;
+    const cz = z + dz * (i + 0.5) * stepD;
+    addObstacle(cx, cz, dx ? stepD : width, (i + 1) * stepH, dz ? stepD : width, hex);
+  }
+}
+// Bâtiment : 4 murs (porte sur un côté), toit praticable, parapets franchissables
+// doorSide : 0 = +z, 1 = −z, 2 = +x, 3 = −x
+function addBuilding(x, z, w, d, h, wallHex, doorSide) {
+  const t = 0.4, DOOR = 1.8, LINTEL = 2.6;
+  const sides = [
+    { cx: x, cz: z + d / 2 - t / 2, len: w, alongX: true },
+    { cx: x, cz: z - d / 2 + t / 2, len: w, alongX: true },
+    { cx: x + w / 2 - t / 2, cz: z, len: d, alongX: false },
+    { cx: x - w / 2 + t / 2, cz: z, len: d, alongX: false }
+  ];
+  sides.forEach((s, i) => {
+    if (i === doorSide) {
+      const segLen = (s.len - DOOR) / 2;
+      const off = (DOOR + segLen) / 2;
+      for (const sgn of [-1, 1]) {
+        const cx = s.alongX ? s.cx + sgn * off : s.cx;
+        const cz = s.alongX ? s.cz : s.cz + sgn * off;
+        addObstacle(cx, cz, s.alongX ? segLen : t, h, s.alongX ? t : segLen, wallHex);
+      }
+      addObstacle(s.cx, s.cz, s.alongX ? DOOR : t, h - LINTEL, s.alongX ? t : DOOR, wallHex, LINTEL);
+    } else {
+      addObstacle(s.cx, s.cz, s.alongX ? s.len : t, h, s.alongX ? t : s.len, wallHex);
+    }
+  });
+  addObstacle(x, z, w, 0.25, d, 0x6e5844, h);   // dalle de toit praticable
+  // Parapets 0.4 : cover sur le toit, franchissables au step-up
+  addObstacle(x, z + d / 2 - 0.12, w, 0.4, 0.24, wallHex, h + 0.25);
+  addObstacle(x, z - d / 2 + 0.12, w, 0.4, 0.24, wallHex, h + 0.25);
+  addObstacle(x + w / 2 - 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25);
+  addObstacle(x - w / 2 + 0.12, z, 0.24, 0.4, d, wallHex, h + 0.25);
+}
+function addRocks(x, z) {
+  const n = 2 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const s = 0.7 + rnd() * 1.5;
+    const shade = 0x84817a + Math.floor(rnd() * 4) * 0x040404;
+    addObstacle(x + (rnd() - 0.5) * 3.4, z + (rnd() - 0.5) * 3.4,
+      s, 0.4 + rnd() * 1.8, s * (0.8 + rnd() * 0.5), shade);
+  }
+}
+
+// --- LE DÉCOR : 4 bâtiments à toit accessible, tour de guet, conteneurs,
+// barricades sautables (0.8 m), rochers — la verticalité du jeu ---
+addBuilding(-28, -20, 8, 6, 3.5, 0xd8cfae, 0);
+addStairs(-37.46, -20, 1, 0, 1.6, 3.75);
+addBuilding(27, -30, 7, 7, 3.2, 0xa96a52, 3);
+addStairs(27, -38.54, 0, 1, 1.6, 3.45);
+addBuilding(-30, 27, 9, 5, 3.5, 0x9a927f, 2);
+addStairs(-30, 34.96, 0, -1, 1.6, 3.75);
+addBuilding(31, 26, 6, 6, 3, 0xc9b183, 1);
+addStairs(38.62, 26, -1, 0, 1.6, 3.25);
+
+// Tour de guet — dans la zone finale : la verticalité du climax
+{
+  const tx = 13, tz = 7;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    addObstacle(tx + sx * 1.5, tz + sz * 1.5, 0.35, 4, 0.35, 0x7a5c3a);
+  addObstacle(tx, tz, 3.6, 0.3, 3.6, 0x8a6a44, 4);
+  addObstacle(tx, tz + 1.68, 3.6, 0.4, 0.24, 0x7a5c3a, 4.3);
+  addObstacle(tx, tz - 1.68, 3.6, 0.4, 0.24, 0x7a5c3a, 4.3);
+  addObstacle(tx + 1.68, tz, 0.24, 0.4, 3.6, 0x7a5c3a, 4.3);
+  addObstacle(tx - 1.68, tz, 0.24, 0.4, 3.6, 0x7a5c3a, 4.3);
+  addStairs(tx + 1.8 + 6.3, tz, -1, 0, 1.6, 4.3);
+}
+// Conteneurs (toits praticables par escalier)
+addObstacle(-8, -36, 6, 2.5, 2.6, 0xa3653f);
+addStairs(-14.78, -36, 1, 0, 1.6, 2.5);
+addObstacle(36, 3, 2.6, 2.5, 6, 0x6b7f8c);
+addStairs(36, -3.78, 0, 1, 1.6, 2.5);
+// Barricades : 0.8 m — cover bas, on peut sauter dessus
+for (const [bx, bz, alongX] of [[6, -12, 1], [-11, 4, 0], [2, 13, 1], [-18, -8, 1],
+    [18, 16, 0], [-6, 22, 1], [22, -8, 0], [-24, 10, 1], [10, -24, 0],
+    [-14, -28, 1], [14, 28, 1], [40, -14, 0]]) {
+  addObstacle(bx, bz, alongX ? 2.6 : 0.35, 0.8, alongX ? 0.35 : 2.6, 0x7a5c3a);
+}
+// Rochers
+for (const [rx, rz] of [[44, 20], [-44, -6], [20, 42], [-20, -42],
+    [48, -34], [-48, 36], [0, -48], [-40, -32]]) addRocks(rx, rz);
+
 function decorSpot() {
-  let x, z;
-  do { x = (rnd() * 2 - 1) * (HALF - 4); z = (rnd() * 2 - 1) * (HALF - 4); }
-  while (Math.hypot(x, z) < 12);
+  let x, z, tries = 0;
+  do {
+    x = (rnd() * 2 - 1) * (HALF - 4);
+    z = (rnd() * 2 - 1) * (HALF - 4);
+    tries++;
+  } while ((Math.hypot(x, z) < 12 || footprintBlocked(x, z, 1)) && tries < 30);
   return [x, z];
 }
 for (let i = 0; i < 22; i++) {
@@ -620,7 +724,7 @@ function spawnNpc() {
     x = (Math.random() * 2 - 1) * (HALF - 2);
     z = (Math.random() * 2 - 1) * (HALF - 2);
     tries++;
-  } while (Math.hypot(x, z) < SPAWN_CLEAR_R && tries < 20);
+  } while ((Math.hypot(x, z) < SPAWN_CLEAR_R || footprintBlocked(x, z, 0.5)) && tries < 40);
 
   const { group, meshes, hitbox } = buildCharacter(attrs);
   group.position.set(x, 0, z);
@@ -746,11 +850,15 @@ const player = {
   const baseAngle = Math.random() * Math.PI * 2;
   for (let i = 0; i < totalSpawns; i++) {
     const a = baseAngle + (i * Math.PI * 2) / totalSpawns + (Math.random() - 0.5) * 0.4;
-    const r = ZONE_START_R * (0.58 + Math.random() * 0.12);
-    G.spawnPoints.push({
-      x: Math.max(-HALF + 2, Math.min(HALF - 2, Math.cos(a) * r)),
-      z: Math.max(-HALF + 2, Math.min(HALF - 2, Math.sin(a) * r))
-    });
+    let r = ZONE_START_R * (0.58 + Math.random() * 0.12);
+    let x, z, tries = 0;
+    do {   // si le point tombe dans une structure : on glisse vers le centre
+      x = Math.max(-HALF + 2, Math.min(HALF - 2, Math.cos(a) * r));
+      z = Math.max(-HALF + 2, Math.min(HALF - 2, Math.sin(a) * r));
+      r -= 2.5;
+      tries++;
+    } while (footprintBlocked(x, z, 0.8) && tries < 10);
+    G.spawnPoints.push({ x, z });
   }
   player.x = G.spawnPoints[0].x;
   player.z = G.spawnPoints[0].z;
@@ -803,23 +911,42 @@ addEventListener('mousedown', (e) => { if (e.button === 0 && G.locked) G.mouseHe
 addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseHeld = false; });
 
 function collidePlayer() {
+  const feet = player.y;
   for (const o of obstacles) {
+    if (feet >= o.maxY - 0.01) continue;          // on est au-dessus : pas un mur
+    if (feet + PLAYER_H <= o.minY) continue;      // on passe dessous (linteau, toit)
     const nx = Math.max(o.minX, Math.min(player.x, o.maxX));
     const nz = Math.max(o.minZ, Math.min(player.z, o.maxZ));
     const dx = player.x - nx, dz = player.z - nz;
     const d2 = dx * dx + dz * dz;
-    if (d2 < PLAYER_R * PLAYER_R) {
-      if (d2 > 0.0001) {
-        const d = Math.sqrt(d2);
-        player.x = nx + (dx / d) * PLAYER_R;
-        player.z = nz + (dz / d) * PLAYER_R;
-      } else {
-        player.x = o.maxX + PLAYER_R;   // coincé pile dedans : pushout arbitraire
-      }
+    if (d2 >= PLAYER_R * PLAYER_R) continue;
+    // Petit rebord au sol → on monte dessus (marches d'escalier, parapets)
+    if (player.grounded && o.maxY - feet <= STEP_UP) {
+      player.y = o.maxY;
+      player.vy = 0;
+      continue;
+    }
+    if (d2 > 0.0001) {
+      const d = Math.sqrt(d2);
+      player.x = nx + (dx / d) * PLAYER_R;
+      player.z = nz + (dz / d) * PLAYER_R;
+    } else {
+      player.x = o.maxX + PLAYER_R;   // coincé pile dedans : pushout arbitraire
     }
   }
   player.x = Math.max(-HALF, Math.min(HALF, player.x));
   player.z = Math.max(-HALF, Math.min(HALF, player.z));
+}
+// Plus haut support sous les pieds (référence AVANT intégration : pas de tunneling)
+function supportHeight(refFeet) {
+  let g = 0;
+  for (const o of obstacles) {
+    if (o.maxY > refFeet + 0.02 || o.maxY <= g) continue;
+    if (player.x + PLAYER_R <= o.minX || player.x - PLAYER_R >= o.maxX ||
+        player.z + PLAYER_R <= o.minZ || player.z - PLAYER_R >= o.maxZ) continue;
+    g = o.maxY;
+  }
+  return g;
 }
 
 function updatePlayer(dt) {
@@ -883,15 +1010,20 @@ function updatePlayer(dt) {
   }
   // en l'air : pas de nouvelle accélération (pas de bunny-hop)
 
-  if (!player.grounded) {
-    player.vy -= GRAVITY * dt;
-  }
   player.x += player.vx * dt;
   player.z += player.vz * dt;
+  collidePlayer();                      // le step-up peut relever player.y
+  const refFeet = player.y;
+  if (!player.grounded) player.vy -= GRAVITY * dt;
   player.y += player.vy * dt;
-  if (player.y <= 0) { player.y = 0; player.vy = 0; player.grounded = true; }
-
-  collidePlayer();
+  const g = supportHeight(refFeet);     // toit, marche, barricade, rocher... ou sol
+  if (player.y <= g) {
+    player.y = g;
+    player.vy = 0;
+    player.grounded = true;
+  } else if (player.y > g + 0.02) {
+    player.grounded = false;            // on a quitté le rebord : chute
+  }
 
   // Caméra : hauteur d'yeux (slide baisse), headbob, recul
   const targetEye = player.sliding ? EYE_SLIDE : EYE;
@@ -1071,7 +1203,8 @@ function updateRockets(dt) {
     if (!boom) {
       for (const o of obstacles) {
         if (p.x > o.minX - 0.1 && p.x < o.maxX + 0.1 &&
-            p.z > o.minZ - 0.1 && p.z < o.maxZ + 0.1 && p.y < 1.4) { boom = true; break; }
+            p.z > o.minZ - 0.1 && p.z < o.maxZ + 0.1 &&
+            p.y > o.minY - 0.1 && p.y < o.maxY + 0.1) { boom = true; break; }
       }
     }
     if (!boom) {
@@ -1434,8 +1567,9 @@ function updateNpcs(dt) {
       n.z += n.vz * dt;
       n.x = Math.max(-HALF, Math.min(HALF, n.x));
       n.z = Math.max(-HALF, Math.min(HALF, n.z));
-      // Pushout obstacles (cercle r=0.3 vs AABB)
+      // Pushout obstacles (cercle r=0.3 vs AABB) — les PNJ restent au sol
       for (const o of obstacles) {
+        if (o.minY > 1.2) continue;   // linteaux, toits : ils passent dessous
         const nx = Math.max(o.minX, Math.min(n.x, o.maxX));
         const nz = Math.max(o.minZ, Math.min(n.z, o.maxZ));
         const dx = n.x - nx, dz = n.z - nz;
@@ -1553,12 +1687,14 @@ function updateZone(dt) {
   }
 }
 function randomPointInZone() {
-  const a = Math.random() * Math.PI * 2;
-  const r = Math.sqrt(Math.random()) * Math.max(5, (G.zoneR || ZONE_START_R) - 3);
-  return {
-    x: Math.max(-HALF, Math.min(HALF, Math.cos(a) * r)),
-    z: Math.max(-HALF, Math.min(HALF, Math.sin(a) * r))
-  };
+  for (let t = 0; t < 10; t++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * Math.max(5, (G.zoneR || ZONE_START_R) - 3);
+    const x = Math.max(-HALF, Math.min(HALF, Math.cos(a) * r));
+    const z = Math.max(-HALF, Math.min(HALF, Math.sin(a) * r));
+    if (!footprintBlocked(x, z, 0.6)) return { x, z };
+  }
+  return { x: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 };   // repli : la place
 }
 function updateHpBar() {
   const pct = Math.max(0, player.hp) / PLAYER_MAX_HP * 100;
@@ -1592,6 +1728,7 @@ function respawnPlayer() {
   player.hp = PLAYER_MAX_HP;
   const p = randomPointInZone();
   player.x = p.x; player.z = p.z;
+  player.y = 0; player.vy = 0; player.grounded = true;
   player.vx = player.vz = 0;
   downOverlay.style.display = 'none';
   updateHpBar();
@@ -1680,14 +1817,17 @@ function spawnPickup(type, x, z, ammo) {
 function spawnInitialLoot() {
   for (const [type, count] of Object.entries(LOOT_COUNTS)) {
     for (let i = 0; i < count; i++) {
-      let x, z;
-      if (Math.random() < HOT_DROP_SHARE) {   // hot drop central
-        const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 11;
-        x = Math.cos(a) * r; z = Math.sin(a) * r;
-      } else {
-        x = (Math.random() * 2 - 1) * (HALF - 3);
-        z = (Math.random() * 2 - 1) * (HALF - 3);
-      }
+      let x, z, tries = 0;
+      do {
+        if (Math.random() < HOT_DROP_SHARE) {   // hot drop central
+          const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 11;
+          x = Math.cos(a) * r; z = Math.sin(a) * r;
+        } else {
+          x = (Math.random() * 2 - 1) * (HALF - 3);
+          z = (Math.random() * 2 - 1) * (HALF - 3);
+        }
+        tries++;
+      } while (footprintBlocked(x, z, 0.5) && tries < 12);
       spawnPickup(type, x, z);
     }
   }
@@ -1715,7 +1855,8 @@ function updateLoot(dt) {
     const l = G.loot[i];
     l.item.rotation.y += dt * 2;
     l.item.position.y = 0.62 + Math.sin(G.now / 400 + i) * 0.05;
-    if (!player.down && Math.hypot(player.x - l.x, player.z - l.z) < 1.3) pickupLoot(l, i);
+    if (!player.down && player.y < 1.5 &&
+        Math.hypot(player.x - l.x, player.z - l.z) < 1.3) pickupLoot(l, i);
   }
 }
 function dropPlayerEquipment() {
@@ -1861,18 +2002,21 @@ function nearestExcluded(x, z, maxDist) {
   return best;
 }
 
-function botFire(bot, angle, spread, cosmetic, cd) {
+function botFire(bot, angle, spread, cosmetic, cd, targetY = 1.25) {
   if (G.now < bot.fireAt) return false;
   bot.fireAt = G.now + cd + Math.random() * 150;
   sfx('rifle', volAt(bot.x, bot.z) * 0.7);
   const a = angle + (Math.random() - 0.5) * spread;
   const x = bot.x + Math.cos(a) * 0.8, z = bot.z + Math.sin(a) * 0.8;
+  // Composante verticale : les bots visent aussi un joueur en hauteur (toits)
+  const dHor = Math.max(2, Math.hypot(player.x - bot.x, player.z - bot.z));
+  const vy = cosmetic ? 0 : (targetY - 1.25) / (dHor / BOT_BULLET_SPEED);
   const m = new THREE.Mesh(GEO_BOX, botBulletMat);
   m.scale.set(0.1, 0.1, 0.34);
   m.position.set(x, 1.25, z);
   m.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
   scene.add(m);
-  botBullets.push({ mesh: m, x, z, vx: Math.cos(a) * BOT_BULLET_SPEED,
+  botBullets.push({ mesh: m, x, z, y: 1.25, vy, vx: Math.cos(a) * BOT_BULLET_SPEED,
     vz: Math.sin(a) * BOT_BULLET_SPEED, born: G.now, owner: bot, cosmetic });
   scareNpcs(x, z);
   return true;
@@ -2056,6 +2200,7 @@ function updateBots(dt) {
     bot.x = Math.max(-HALF, Math.min(HALF, bot.x));
     bot.z = Math.max(-HALF, Math.min(HALF, bot.z));
     for (const o of obstacles) {
+      if (o.minY > 1.2) continue;   // les bots restent au sol
       const nx = Math.max(o.minX, Math.min(bot.x, o.maxX));
       const nz = Math.max(o.minZ, Math.min(bot.z, o.maxZ));
       const dx = bot.x - nx, dz = bot.z - nz;
@@ -2089,7 +2234,7 @@ function updateBots(dt) {
       bot.aim = Math.atan2(aimTarget.z - bot.z, aimTarget.x - bot.x);
       const d = Math.hypot(aimTarget.x - bot.x, aimTarget.z - bot.z);
       if (bot.mode === 'fight') {
-        if (d < 26.7) botFire(bot, bot.aim, 0.22, false, BOT_FIRE_CD);   // vraies balles
+        if (d < 26.7) botFire(bot, bot.aim, 0.22, false, BOT_FIRE_CD, player.y + 1.2);   // vraies balles
       } else if (d < 16.5) {
         botPurgeShot(bot, aimTarget);   // PNJ : résolution aux dés
       }
@@ -2127,17 +2272,22 @@ function updateBotBullets(dt) {
     const b = botBullets[i];
     b.x += b.vx * dt;
     b.z += b.vz * dt;
-    b.mesh.position.set(b.x, 1.25, b.z);
-    let dead = G.now - b.born > 1300 || Math.abs(b.x) > HALF || Math.abs(b.z) > HALF;
+    b.y += (b.vy || 0) * dt;
+    b.mesh.position.set(b.x, b.y, b.z);
+    let dead = G.now - b.born > 1300 || Math.abs(b.x) > HALF || Math.abs(b.z) > HALF ||
+               b.y < 0 || b.y > 30;
     if (!dead && !b.cosmetic) {
       for (const o of obstacles) {
-        if (b.x > o.minX && b.x < o.maxX && b.z > o.minZ && b.z < o.maxZ) { dead = true; break; }
+        if (b.x > o.minX && b.x < o.maxX && b.z > o.minZ && b.z < o.maxZ &&
+            b.y > o.minY && b.y < o.maxY) { dead = true; break; }
       }
-      if (!dead && !player.down && Math.hypot(b.x - player.x, b.z - player.z) < 0.5) {
+      if (!dead && !player.down &&
+          Math.hypot(b.x - player.x, b.z - player.z) < 0.5 &&
+          Math.abs(b.y - (player.y + 1.0)) < 1.1) {
         damagePlayer(BOT_BULLET_DMG, b.owner.name.toUpperCase());
         dead = true;
       }
-      if (!dead) {
+      if (!dead && b.y < 2.1) {
         for (const n of G.npcs) {
           if (n.dead) continue;
           if (Math.hypot(b.x - n.x, b.z - n.z) < 0.45) {
@@ -2179,9 +2329,15 @@ function drawBotTags() {
 
 // ---------- Minimap (zone + joueur) ----------
 const mmCtx = $('minimap').getContext('2d');
+const mmSolids = obstacles.filter(o =>
+  o.minY < 1.2 && o.maxY >= 1.6 && (o.maxX - o.minX) * (o.maxZ - o.minZ) >= 1.2);
 function drawMinimap() {
   const s = 150 / WORLD, cx = 75, cz = 75;
   mmCtx.clearRect(0, 0, 150, 150);
+  mmCtx.fillStyle = 'rgba(30,38,22,.8)';   // structures (murs, rochers, conteneurs)
+  for (const o of mmSolids) {
+    mmCtx.fillRect(cx + o.minX * s, cz + o.minZ * s, (o.maxX - o.minX) * s, (o.maxZ - o.minZ) * s);
+  }
   mmCtx.strokeStyle = '#e04a3a';
   mmCtx.lineWidth = 2;
   mmCtx.beginPath();
@@ -2272,6 +2428,7 @@ function startGame() {
 // Hook de debug/test (piloter le jeu sans pointer lock, ex. tests headless)
 window.__G = G;
 window.__player = player;
+window.__obstacles = obstacles;
 
 let lastT = performance.now();
 function animate() {
