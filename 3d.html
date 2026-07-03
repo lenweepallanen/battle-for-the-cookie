@@ -172,6 +172,19 @@
                  background: #ffe08a; border: none; border-radius: 10px; padding: 14px 30px;
                  cursor: pointer; animation: pulse 1.2s infinite; }
   .screen a.home { font-family: Arial, sans-serif; color: #cfe0b0; font-size: 13px; }
+  .screen .mp { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .screen .btn2 { font-family: 'Arial Black', Arial, sans-serif; font-size: 14px; color: #2c3a1e;
+                  background: #cfe0b0; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+  .screen .btn2:hover { background: #ffe08a; }
+  #nameInput { font-family: Arial, sans-serif; font-size: 15px; padding: 10px 12px;
+               border-radius: 8px; border: 2px solid #cfe0b0; background: rgba(255,255,255,.92);
+               color: #2c3a1e; width: 150px; }
+  .linkrow { display: flex; gap: 8px; width: min(520px, 90vw); }
+  #roomLink { flex: 1; font-family: monospace; font-size: 13px; padding: 10px;
+              border-radius: 8px; border: 2px solid #cfe0b0; background: rgba(255,255,255,.92); color: #2c3a1e; }
+  #lobbyList { font-family: Arial, sans-serif; font-size: 17px; line-height: 1.9; color: #eef3e2;
+               background: rgba(0,0,0,.25); border-radius: 10px; padding: 12px 34px; min-width: 240px; }
+  .btn[disabled] { opacity: .45; animation: none; cursor: default; }
   @keyframes pulse { 50% { transform: scale(1.06); } }
   .cookie { width: 90px; height: 90px; border-radius: 50%; background: #c98f4e;
             border: 5px solid #a9713a; position: relative; }
@@ -227,8 +240,23 @@
     Shift — sprint &nbsp;•&nbsp; Espace — saut &nbsp;•&nbsp; C — glissade &nbsp;•&nbsp; R — recharger &nbsp;•&nbsp; F — medkit &nbsp;•&nbsp; E — fouet (finale)<br>
     Échap — pause &nbsp;•&nbsp; <i>Desktop uniquement</i>
   </div>
-  <button class="btn" id="startBtn">CLIQUE POUR JOUER</button>
+  <button class="btn" id="startBtn">JOUER SOLO</button>
+  <div class="mp">
+    <input id="nameInput" maxlength="14" placeholder="Ton pseudo">
+    <button class="btn2" id="hostBtn">🌐 CRÉER UNE PARTIE EN LIGNE</button>
+    <button class="btn2" id="joinBtn" style="display:none">🔗 REJOINDRE LA PARTIE</button>
+  </div>
   <a class="home" href="index.html">← retour à l'accueil</a>
+</div>
+
+<div id="lobby" class="screen" style="display:none">
+  <h1>🌐 PARTIE EN LIGNE</h1>
+  <p>Envoie ce lien à tes amis — <b>2 à 4 joueurs</b>, les places vides seront des bots :</p>
+  <div class="linkrow"><input id="roomLink" readonly><button class="btn2" id="copyBtn">COPIER</button></div>
+  <div id="lobbyList"></div>
+  <p id="lobbyHint">Création de la salle…</p>
+  <button class="btn" id="launchBtn" style="display:none" disabled>LANCER LA PARTIE</button>
+  <button class="btn" id="goBtn" style="display:none">CLIQUE POUR JOUER</button>
 </div>
 
 <div id="pauseOverlay" class="screen">
@@ -244,6 +272,7 @@
   <a class="home" href="index.html">← retour à l'accueil</a>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -1291,14 +1320,15 @@ function shuffle(arr) {
 }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-function spawnNpc() {
-  const attrs = {
+function spawnNpc(forcedAttrs = null, fx = null, fz = null) {
+  const attrs = forcedAttrs || {
     hair: pick(Object.keys(HAIR_COLORS)),
     len: pick(HAIR_LENGTHS),
     hat: pick(HATS),
     top: pick(Object.keys(TOP_COLORS))
   };
-  let x, z, tries = 0;
+  let x = fx, z = fz, tries = 0;
+  if (fx === null)
   do {
     x = (Math.random() * 2 - 1) * (HALF - 2);
     z = (Math.random() * 2 - 1) * (HALF - 2);
@@ -1310,7 +1340,7 @@ function spawnNpc() {
   scene.add(group);
 
   const npc = {
-    attrs, hp: NPC_HP, isCulprit: false, dead: false,
+    attrs, hp: NPC_HP, isCulprit: false, dead: false, held: false, idx: G.npcs.length,
     x, z, vx: 0, vz: 0, nextThink: 0, walkPhase: Math.random() * 10,
     group, meshes, hitbox, headBox, armL, armR, flashUntil: 0
   };
@@ -1359,6 +1389,7 @@ function startRound() {
   if (G.cluePool.length === 0) return;
   const clue = G.cluePool.pop();
   G.revealedClues.push(clue);
+  if (NET.mode === 'host') netBroadcast({ t: 'clue', c: clue, fin: G.cluePool.length === 0 });
   sfx('clue');
   showBanner('NOUVEL INDICE !', CLUE_TEXTS[clue.axis](clue.value), 5000);
   refreshCluesList();
@@ -1416,6 +1447,8 @@ function culpritDown(npc, killerBot = null) {
   G.culpritAttrs = heir.attrs;
   rebuildCluePool();
   showBanner('LE COUPABLE EST TOMBÉ !', 'Un complice a récupéré le cookie... la traque continue !', 4000);
+  if (NET.mode === 'host') netBroadcast({ t: 'banner',
+    a: 'LE COUPABLE EST TOMBÉ !', b: 'Un complice a récupéré le cookie... la traque continue !' });
   updateHud();
 }
 
@@ -1481,6 +1514,7 @@ addEventListener('wheel', (e) => {
 });
 // e.code = position PHYSIQUE des touches : KeyW/A/S/D couvre AZERTY (ZQSD) et QWERTY
 function moveInput() {
+  if (!G.locked) return { f: 0, s: 0 };
   let f = 0, s = 0;
   if (keys.KeyW || keys.ArrowUp) f += 1;
   if (keys.KeyS || keys.ArrowDown) f -= 1;
@@ -1707,6 +1741,7 @@ function rebuildTargets() {
   shootTargets = [ground, ...obstacleMeshes];
   for (const n of G.npcs) if (!n.dead) shootTargets.push(n.hitbox, n.headBox);
   for (const b of G.bots) if (!b.down) shootTargets.push(b.hitbox, b.headBox);
+  for (const r of NET.remotes) if (!r.down) shootTargets.push(r.hitbox, r.headBox);
 }
 function raycastCenter() {
   raycaster.setFromCamera(CENTER_SCREEN, camera);
@@ -1905,7 +1940,7 @@ function shoot() {
     // Bloom : précis immobile, dispersé en courant, très dispersé en l'air.
     // Sniper à la lunette : quasi parfait — c'est toute sa raison d'être.
     const spread = (w.scoped && player.adsT > 0.75) ? 0.002 : w.spread * currentBloom();
-    let scared = false;
+    let scared = false, lastTo = null;
     for (let i = 0; i < w.pellets; i++) {
       const dir = spreadDir(spread);
       let hit = raycastDir(camera.position, dir);
@@ -1913,19 +1948,43 @@ function shoot() {
       const to = hit ? hit.point
         : camera.position.clone().add(dir.multiplyScalar(w.range || 120));
       spawnTracer(muzzle, to);
+      lastTo = to;
       // Tirer disperse la foule — au départ ET à l'arrivée (mécanique clé du 2D)
       if (!scared) { scareNpcs(to.x, to.z); scared = true; }
       const ud = hit ? hit.object.userData : null;
       const dmg = w.dmg * (ud && ud.head ? HEADSHOT_MULT : 1);
       if (ud && ud.npc && !ud.npc.dead) {
-        hitNpc(ud.npc, dmg);
-        showHitmark(ud.npc.dead ? 'kill' : ud.head ? 'head' : 'hit');
+        if (NET.mode === 'guest') {   // résolution locale « de confiance » → l'hôte arbitre
+          netSend(NET.conn, { t: 'hitN', i: ud.npc.idx, dmg });
+          ud.npc.flashUntil = performance.now() + 60;
+          for (const m of ud.npc.meshes) m.material = flashMat;
+          bloodSplat(ud.npc.x, ud.npc.z, Math.atan2(ud.npc.z - player.z, ud.npc.x - player.x));
+          showHitmark(ud.head ? 'head' : 'hit');
+        } else {
+          hitNpc(ud.npc, dmg);
+          showHitmark(ud.npc.dead ? 'kill' : ud.head ? 'head' : 'hit');
+        }
       } else if (ud && ud.bot && !ud.bot.down) {
-        damageBot(ud.bot, dmg, true);
-        showHitmark(ud.bot.down ? 'kill' : ud.head ? 'head' : 'hit');
+        if (NET.mode === 'guest') {
+          netSend(NET.conn, { t: 'hitB', i: G.bots.indexOf(ud.bot), dmg });
+          showHitmark(ud.head ? 'head' : 'hit');
+        } else {
+          damageBot(ud.bot, dmg, true);
+          showHitmark(ud.bot.down ? 'kill' : ud.head ? 'head' : 'hit');
+        }
+      } else if (ud && ud.remote && !ud.remote.down) {
+        if (NET.mode === 'guest') netSend(NET.conn, { t: 'hitP', slot: ud.remote.slot, dmg });
+        else damageRemote(ud.remote, dmg, 'HOST', 'YOU');
+        showHitmark(ud.remote.down ? 'kill' : ud.head ? 'head' : 'hit');
       }
     }
     scareNpcs(player.x, player.z);
+    if (NET.mode !== 'solo' && lastTo) {   // réplication visuelle du tir
+      const fx = { t: 'fx', k: 'shot', f: [+muzzle.x.toFixed(1), +muzzle.y.toFixed(1), +muzzle.z.toFixed(1)],
+        o: [+lastTo.x.toFixed(1), +lastTo.y.toFixed(1), +lastTo.z.toFixed(1)], s: w.snd };
+      if (NET.mode === 'guest') netSend(NET.conn, fx);
+      else netBroadcast(fx);
+    }
   }
   if (st.mag <= 0) {
     if (w.infinite || st.ammo > 0) startReload();
@@ -2027,6 +2086,29 @@ function updateRockets(dt) {
   }
 }
 function explodeAt(x, y, z) {
+  if (NET.mode === 'guest') {   // l'hôte arbitre tous les dégâts de la roquette
+    explodeFxOnly(x, y, z);
+    netSend(NET.conn, { t: 'fx', k: 'boom', x: +x.toFixed(1), y: +y.toFixed(1), z: +z.toFixed(1) });
+    const R = WEAPONS.rocket.radius;
+    for (const n of G.npcs) {
+      if (!n.dead && Math.hypot(n.x - x, n.z - z) <= R)
+        netSend(NET.conn, { t: 'hitN', i: n.idx, dmg: WEAPONS.rocket.dmg });
+    }
+    G.bots.forEach((b, i) => {
+      if (!b.down && Math.hypot(b.x - x, b.z - z) < R)
+        netSend(NET.conn, { t: 'hitB', i, dmg: WEAPONS.rocket.dmg });
+    });
+    for (const r of NET.remotes) {
+      const d = Math.hypot(r.x - x, r.z - z);
+      if (!r.down && d < R)
+        netSend(NET.conn, { t: 'hitP', slot: r.slot, dmg: Math.round(WEAPONS.rocket.dmg * (1 - d / R)) });
+    }
+    const pd = Math.hypot(player.x - x, player.z - z);
+    if (pd < R) netSend(NET.conn, { t: 'hitSelf', dmg: Math.round(WEAPONS.rocket.dmg * (1 - pd / R)) });
+    return;
+  }
+  if (NET.mode === 'host')
+    netBroadcast({ t: 'fx', k: 'boom', x: +x.toFixed(1), y: +y.toFixed(1), z: +z.toFixed(1) });
   sfx('explosion', 0.3 + volAt(x, z) * 0.7);
   scareNpcs(x, z, EXPLO_SCARE_RADIUS);
   const s = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10),
@@ -2051,6 +2133,10 @@ function explodeAt(x, y, z) {
   for (const b of G.bots) {   // les bots aussi (+50 par down, l'explosion paie)
     if (b.down) continue;
     if (Math.hypot(b.x - x, b.z - z) < R) damageBot(b, WEAPONS.rocket.dmg, true);
+  }
+  for (const r of NET.remotes) {   // les invités subissent aussi le souffle
+    const d = Math.hypot(r.x - x, r.z - z);
+    if (!r.down && d < R) damageRemote(r, WEAPONS.rocket.dmg * (1 - d / R), null, 'UNE ROQUETTE');
   }
   const pd = Math.hypot(player.x - x, player.z - z);
   if (pd < R) damagePlayer(WEAPONS.rocket.dmg * (1 - pd / R), 'TA PROPRE ROQUETTE');
@@ -2117,6 +2203,7 @@ function killNpcVisual(npc) {
   deathPuffs(npc.x, npc.z);
   witnessReaction(npc.x, npc.z);
   dying.push({ npc, start: performance.now(), yaw: Math.atan2(Math.cos(a), Math.sin(a)) });
+  if (NET.mode === 'host') netBroadcast({ t: 'npcDead', i: npc.idx, a: +a.toFixed(2) });
 }
 const dying = [];
 function updateDying() {
@@ -2186,13 +2273,17 @@ function whipLash() {
   }
   // Prise ! Ligotage : clic maintenu, immobile
   G.tying = { npc, start: G.now };
+  npc.held = true;
   npc.vx = npc.vz = 0;
   npc.nextThink = G.now + 999999;   // maîtrisé : il ne bouge plus
+  if (NET.mode === 'guest') netSend(NET.conn, { t: 'tie', i: npc.idx, on: true });
   tieBar.style.display = 'block';
 }
 function cancelTie() {
   if (!G.tying) return;
   G.tying.npc.nextThink = G.now;
+  G.tying.npc.held = false;
+  if (NET.mode === 'guest') netSend(NET.conn, { t: 'tie', i: G.tying.npc.idx, on: false });
   G.tying = null;
   tieBar.style.display = 'none';
   playerRope.visible = false;
@@ -2214,11 +2305,18 @@ function updateTie() {
   const progress = (G.now - G.tying.start) / CAPTURE_TIME;
   tieBar.firstElementChild.style.width = Math.min(100, progress * 100) + '%';
   if (progress >= 1) {
+    if (NET.mode === 'guest') {   // verdict rendu par l'hôte (le coupable est SON secret)
+      const idx = npc.idx;
+      cancelTie();
+      netSend(NET.conn, { t: 'accuse', i: idx });
+      return;
+    }
     cancelTie();
     if (npc.isCulprit) {
       G.score += SCORE_CULPRIT;
       floatScore(npc, SCORE_CULPRIT);
-      endGame(true, 'COUPABLE CAPTURÉ !', 'Le voleur de cookie est ligoté, VIVANT. La ville te doit un goûter.');
+      endGame(true, NET.mode === 'host' ? `${NET.names[0].toUpperCase()} A CAPTURÉ LE COUPABLE !` : 'COUPABLE CAPTURÉ !',
+        'Le voleur de cookie est ligoté, VIVANT. La ville te doit un goûter.');
     } else {
       G.score += SCORE_WRONG_TIE;
       floatScore(npc, SCORE_WRONG_TIE);
@@ -2453,6 +2551,7 @@ function updateTimerHud() {
       ? 'PHASE DE LOOT' : `MANCHE ${G.revealedClues.length}/${MAX_ROUNDS}`;
     ms = Math.max(0, G.nextClueAt - G.now);
   }
+  if (NET.mode === 'guest') ms = NET.remain;
   const s = Math.ceil(ms / 1000);
   timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
@@ -2485,6 +2584,12 @@ function updateZone(dt) {
     G.zoneR = G.zoneFrom + (G.zoneTo - G.zoneFrom) * t;
   }
   zoneWall.scale.set(G.zoneR, 1, G.zoneR);
+  if (NET.mode === 'host') {
+    for (const r of NET.remotes) {
+      if (!r.down && Math.hypot(r.x, r.z) > G.zoneR)
+        damageRemote(r, (3 + G.zonePhase * 2.5) * dt, null, 'LA ZONE');
+    }
+  }
   const outside = Math.hypot(player.x, player.z) > G.zoneR;
   if (outside && !player.down) {
     damagePlayer((3 + G.zonePhase * 2.5) * dt, 'LA ZONE');
@@ -2595,7 +2700,8 @@ function updateHeal() {
   const t = (G.now - G.healing.start) / HEAL_TIME;
   healBar.firstElementChild.style.width = Math.min(100, t * 100) + '%';
   if (t >= 1) {
-    player.hp = Math.min(PLAYER_MAX_HP, player.hp + MEDKIT_HEAL);
+    if (NET.mode === 'guest') netSend(NET.conn, { t: 'heal' });
+    else player.hp = Math.min(PLAYER_MAX_HP, player.hp + MEDKIT_HEAL);
     G.medkits--;
     sfx('heal');
     updateHpBar();
@@ -2611,7 +2717,8 @@ const LOOT_STYLE = {   // indicateur flottant au-dessus de la caisse
   sniper:  { hex: 0x2e2a24, w: 0.14, h: 0.14, d: 0.85 },
   medkit:  { hex: 0xf0ede4, w: 0.4,  h: 0.22, d: 0.4 }
 };
-function spawnPickup(type, x, z, ammo, ly = 0) {
+let lootIdSeq = 1;
+function spawnPickup(type, x, z, ammo, ly = 0, id = null) {
   x = Math.max(-HALF, Math.min(HALF, x));
   z = Math.max(-HALF, Math.min(HALF, z));
   const g = new THREE.Group();
@@ -2634,7 +2741,12 @@ function spawnPickup(type, x, z, ammo, ly = 0) {
   }
   g.position.set(x, ly, z);
   scene.add(g);
-  G.loot.push({ type, x, z, y: ly, ammo: ammo ?? AMMO_PACK[type], group: g, item });
+  const rec = { id: id ?? lootIdSeq++, type, x, z, y: ly, ammo: ammo ?? AMMO_PACK[type], group: g, item };
+  G.loot.push(rec);
+  if (NET.mode === 'host' && NET.initSent) {
+    netBroadcast({ t: 'lootAdd', l: { id: rec.id, type, x: +x.toFixed(1), z: +z.toFixed(1), y: ly,
+      ammo: rec.ammo === Infinity ? 0 : rec.ammo } });
+  }
 }
 function spawnInitialLoot() {
   for (const [type, count] of Object.entries(LOOT_COUNTS)) {
@@ -2674,6 +2786,8 @@ function pickupLoot(l, idx) {
     if (!wasOwned) selectWeapon(l.type);   // première prise = équipée auto
   }
   sfx('pickup');
+  if (NET.mode === 'guest') netSend(NET.conn, { t: 'take', id: l.id });
+  else if (NET.mode === 'host') netBroadcast({ t: 'lootRm', id: l.id });
   scene.remove(l.group);
   G.loot.splice(idx, 1);
   updateHotbar();
@@ -2722,8 +2836,8 @@ function buildBotCharacter(def) {
   c.gunMesh = gun;
   return c;
 }
-function spawnBot(def, idx) {
-  const p = G.spawnPoints[idx + 1] || randomPointInZone();
+function spawnBot(def, ringIdx) {
+  const p = G.spawnPoints[ringIdx] || randomPointInZone();
   const { group, meshes, hitbox, headBox, armL, armR, gunMesh } = buildBotCharacter(def);
   group.position.set(p.x, 0, p.z);
   scene.add(group);
@@ -2757,8 +2871,19 @@ function spawnBot(def, idx) {
 }
 
 function getStandings() {
+  if (NET.mode === 'guest') {
+    const ps = (NET.lastP || []).map(p => ({
+      name: (NET.names[p.s] || 'Joueur') + (p.s === NET.slot ? ' (toi)' : ''),
+      score: p.score, color: PLAYER_TAG_COLORS[p.s % 4], down: p.down
+    }));
+    return [...ps, ...G.bots.map(b => ({ name: b.name, score: b.score, color: b.color, down: b.down }))]
+      .sort((a, b) => b.score - a.score);
+  }
   return [
-    { name: 'YOU', score: G.score, color: '#7dd94a', down: player.down },
+    { name: NET.mode === 'host' ? NET.names[0] + ' (toi)' : 'YOU', score: G.score,
+      color: PLAYER_TAG_COLORS[0], down: player.down },
+    ...NET.remotes.map(r => ({ name: r.name, score: r.score,
+      color: PLAYER_TAG_COLORS[r.slot % 4], down: r.down })),
     ...G.bots.map(b => ({ name: b.name, score: b.score, color: b.color, down: b.down }))
   ].sort((a, b) => b.score - a.score);
 }
@@ -2823,7 +2948,7 @@ function nearestSuspect(x, z, rejected) {
   let best = null, bestD = Infinity;
   for (const n of G.npcs) {
     if (n.dead || isExcluded(n) || rejected.has(n)) continue;
-    if (G.tying && G.tying.npc === n) continue;   // déjà pris par le joueur
+    if (n.held || (G.tying && G.tying.npc === n)) continue;   // déjà pris par un joueur
     const d = Math.hypot(x - n.x, z - n.z);
     if (d < bestD) { bestD = d; best = n; }
   }
@@ -2909,6 +3034,11 @@ function thinkBot(bot) {
     if (ob === bot || ob.down) continue;
     const d = Math.hypot(ob.x - bot.x, ob.z - bot.z);
     if (d < foeD) { foe = ob; foeD = d; }
+  }
+  for (const rr of NET.remotes) {
+    if (rr.down) continue;
+    const d = Math.hypot(rr.x - bot.x, rr.z - bot.z);
+    if (d < foeD) { foe = rr; foeD = d; }
   }
   if (foe) {
     bot.mode = 'fight';
@@ -3088,6 +3218,7 @@ function updateBots(dt) {
         bot.weapon = l.type;
         bot.gunMesh.material = getMat(l.type === 'shotgun' ? 0x6e4a2f : 0x3f3a30);
       } else continue;
+      if (NET.mode === 'host') netBroadcast({ t: 'lootRm', id: l.id });
       scene.remove(l.group);
       G.loot.splice(i, 1);
       sfx('pickup', volAt(bot.x, bot.z) * 0.6);
@@ -3104,7 +3235,7 @@ function updateBots(dt) {
       if (bot.mode === 'fight') {
         if (d < 26.7) {   // vraies balles, selon l'arme lootée
           const bw = BOT_WEAPONS[bot.weapon];
-          const ty = (aimTarget === player ? player.y : 0) + 1.2;
+          const ty = (aimTarget.y || 0) + 1.2;
           botFire(bot, bot.aim, bw.spread, false, bw.cd, ty, bw.dmg, bw.pellets, bw.snd);
         }
       } else if (d < 20) {
@@ -3175,6 +3306,15 @@ function updateBotBullets(dt) {
         if (ob === b.owner || ob.down) continue;
         if (Math.hypot(b.x - ob.x, b.z - ob.z) < 0.55 && b.y < 2.1) {
           damageBot(ob, b.dmg || BOT_BULLET_DMG, false, b.owner);
+          dead = true;
+          break;
+        }
+      }
+      if (dead) break;
+      for (const rr of NET.remotes) {   // ... et sur les invités
+        if (rr.down) continue;
+        if (Math.hypot(b.x - rr.x, b.z - rr.z) < 0.5 && Math.abs(b.y - (rr.y + 1.0)) < 1.1) {
+          damageRemote(rr, b.dmg || BOT_BULLET_DMG, b.owner, b.owner.name.toUpperCase());
           dead = true;
           break;
         }
@@ -3260,9 +3400,13 @@ function drawMinimap() {
   mmCtx.stroke();
   mmCtx.restore();
 }
-function endGame(win, title, text) {
+function endGame(win, title, text, stOverride = null) {
   if (G.gameOver) return;
   G.gameOver = true;
+  if (NET.mode === 'host') {
+    netBroadcast({ t: 'end', title, text,
+      winSlot: G.netWinSlot ?? (win ? 0 : -1), st: getStandings() });
+  }
   cancelTie();
   sfx(win ? 'win' : 'lose');
   if (document.pointerLockElement) document.exitPointerLock();
@@ -3270,9 +3414,10 @@ function endGame(win, title, text) {
     $('endTitle').textContent = title;
     $('endTitle').style.color = win ? '#7dd94a' : '#ff6a55';
     $('endText').textContent = text;
+    const st = stOverride || getStandings();
     $('endStats').innerHTML = `Score final : ${G.score} • Éliminations : ${G.kills}` +
       `<br><span style="font-size:15px;color:#c9b183">` +
-      getStandings().map((e, i) => `${i + 1}. ${e.name} — ${e.score}`).join(' &nbsp;·&nbsp; ') +
+      st.map((e, i) => `${i + 1}. ${e.name} — ${e.score}`).join(' &nbsp;·&nbsp; ') +
       `</span>`;
     $('endScreen').style.display = 'flex';
     hud.style.display = 'none';
@@ -3318,7 +3463,32 @@ function startGame() {
   initCluePool();
   spawnInitialLoot();
   spawnPickup('sniper', -36, -2, SNIPER_TOTAL, 7.3);   // l'unique sniper (50 balles)
-  BOT_DEFS.forEach((def, i) => spawnBot(def, i));
+  const humans = NET.mode === 'host' ? NET.names.length : 1;
+  const botCount = NET.mode === 'host' ? 4 - humans : BOT_DEFS.length;
+  BOT_DEFS.slice(0, botCount).forEach((def, i) => spawnBot(def, humans + i));
+
+  if (NET.mode === 'host') {   // invités : records + monde initial
+    const conns = hostConns();
+    NET.names = [NET.names[0], ...conns.map(c => c._name || 'Joueur')];
+    let slot = 1;
+    for (const conn of conns) {
+      conn._slot = slot++;
+      const r = addRemote(conn._slot, conn._name || 'Joueur', conn);
+      const sp = G.spawnPoints[r.slot];
+      r.x = r.tx = sp.x;
+      r.z = r.tz = sp.z;
+    }
+    const npcsData = G.npcs.map(n => ({ a: n.attrs, x: +n.x.toFixed(1), z: +n.z.toFixed(1) }));
+    const lootData = G.loot.map(l => ({ id: l.id, type: l.type, x: +l.x.toFixed(1),
+      z: +l.z.toFixed(1), y: l.y, ammo: l.ammo === Infinity ? 0 : l.ammo }));
+    const playersData = [{ slot: 0, name: NET.names[0] },
+      ...NET.remotes.map(x => ({ slot: x.slot, name: x.name }))];
+    for (const r of NET.remotes) {
+      netSend(r.conn, { t: 'start', slot: r.slot, names: NET.names, bots: botCount,
+        npcs: npcsData, loot: lootData, spawn: G.spawnPoints[r.slot], players: playersData });
+    }
+    NET.initSent = true;
+  }
   rebuildTargets();
   updateHud();
   updateHotbar();
@@ -3326,6 +3496,596 @@ function startGame() {
 }
 
 // ---------- S11. BOUCLE PRINCIPALE ----------
+// ==================== MULTIJOUEUR — hôte autoritatif via WebRTC (PeerJS) ====================
+// L'hôte fait tourner TOUTE la simulation (PNJ, bots, zone, indices, coupable).
+// Les invités simulent leur propre mouvement (feeling FPS intact) et envoient des
+// événements ; ils reçoivent des snapshots ~15 Hz. Le coupable n'est JAMAIS transmis.
+const PLAYER_COLORS = [0x7dd94a, 0x4ab8d9, 0xd94a9e, 0xe0b23a];
+const PLAYER_TAG_COLORS = ['#7dd94a', '#4ab8d9', '#d94a9e', '#e0b23a'];
+const NET = {
+  mode: 'solo',            // 'solo' | 'host' | 'guest'
+  peer: null, conns: [], conn: null,
+  slot: 0, names: [], remotes: [],
+  lastSnapSent: 0, lastStateSent: 0,
+  remain: 0, lastP: null, pendingStart: null
+};
+window.__NET = NET;
+const urlRoom = new URLSearchParams(location.search).get('room');
+
+function myName() {
+  const v = $('nameInput').value.trim();
+  return (v || 'Joueur' + Math.floor(Math.random() * 90 + 10)).slice(0, 14);
+}
+function netSend(conn, obj) { try { conn.send(obj); } catch (e) { /* transport */ } }
+function netBroadcast(obj) { for (const r of NET.remotes) if (r.conn) netSend(r.conn, obj); }
+
+// --- Avatar distant : un chibi aux couleurs du joueur, tag + barre de vie ---
+function addRemote(slot, name, conn = null) {
+  const c = buildChibi(PLAYER_COLORS[slot % 4], 0x5a3b1e, 'court', 'rien');
+  const gun = new THREE.Mesh(GEO_BOX, getMat(0x3f3a30));
+  gun.userData.hex = 0x3f3a30;
+  gun.scale.set(0.08, 0.08, 0.55);
+  gun.position.set(0, -0.28, 0.18);
+  c.armR.add(gun);
+  c.meshes.push(gun);
+  scene.add(c.group);
+  const tag = document.createElement('div');
+  tag.className = 'botTag';
+  tag.innerHTML = `<span style="color:${PLAYER_TAG_COLORS[slot % 4]}">${name}</span>` +
+    `<div class="bhp"><div style="background:${PLAYER_TAG_COLORS[slot % 4]}"></div></div>`;
+  hud.appendChild(tag);
+  const r = {
+    slot, name, conn,
+    x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, yaw: 0,
+    hp: PLAYER_MAX_HP, down: false, downUntil: 0, score: 0, kills: 0,
+    zoneAcc: 0, walkPhase: Math.random() * 10, weapon: 'pistol',
+    group: c.group, meshes: c.meshes, armL: c.armL, armR: c.armR,
+    hitbox: c.hitbox, headBox: c.headBox, tagEl: tag
+  };
+  r.hitbox.userData.remote = r;
+  r.headBox.userData.remote = r;
+  r.headBox.userData.head = true;
+  NET.remotes.push(r);
+  return r;
+}
+function updateRemotes(dt) {
+  for (const r of NET.remotes) {
+    const k = Math.min(1, 12 * dt);
+    r.x += (r.tx - r.x) * k;
+    r.y += (r.ty - r.y) * k;
+    r.z += (r.tz - r.z) * k;
+    const moving = Math.hypot(r.tx - r.x, r.tz - r.z) > 0.06;
+    if (moving) r.walkPhase += dt * 9;
+    if (r.down) {
+      r.group.rotation.x = -Math.PI / 2;
+      r.group.position.set(r.x, 0.25, r.z);
+    } else {
+      r.group.rotation.x = 0;
+      r.group.position.set(r.x, r.y + (moving ? Math.abs(Math.sin(r.walkPhase)) * 0.06 : 0), r.z);
+      let dy = r.yaw - r.group.rotation.y;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      r.group.rotation.y += dy * Math.min(1, 10 * dt);
+      r.armR.rotation.x = -1.25;
+      r.armL.rotation.x = moving ? Math.sin(r.walkPhase) * 0.5 : 0;
+    }
+    // Respawn (côté hôte)
+    if (NET.mode === 'host' && r.down && G.now >= r.downUntil) {
+      const p = randomPointInZone();
+      r.down = false;
+      r.hp = PLAYER_MAX_HP;
+      r.tx = p.x; r.tz = p.z; r.ty = 0;
+      rebuildTargets();
+      if (r.conn) netSend(r.conn, { t: 'respawn', slot: r.slot, x: p.x, z: p.z });
+      updateHud();
+    }
+    // Tag
+    const v = new THREE.Vector3(r.x, 2.15, r.z).project(camera);
+    if (v.z > 1) { r.tagEl.style.display = 'none'; continue; }
+    r.tagEl.style.display = 'block';
+    r.tagEl.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    r.tagEl.style.top = ((1 - (v.y + 1) / 2) * innerHeight) + 'px';
+    r.tagEl.querySelector('span').textContent = r.name + (r.down ? ' (down)' : '');
+    r.tagEl.querySelector('.bhp > div').style.width = Math.max(0, r.hp / PLAYER_MAX_HP * 100) + '%';
+  }
+}
+// Dégâts sur un invité — arbitrés par l'hôte
+function damageRemote(r, dmg, killer = null, sourceName = 'LA ZONE') {
+  if (!r || r.down || G.gameOver) return;
+  r.hp -= dmg;
+  if (r.hp > 0) return;
+  r.hp = 0;
+  r.down = true;
+  r.downUntil = G.now + RESPAWN_MS;
+  r.score += SCORE_DEATH;
+  if (killer === 'HOST') {
+    G.score += SCORE_BOT;
+    floatText(r.x, r.z, '+' + SCORE_BOT, 'good');
+    G.kills++;
+  } else if (killer) {
+    killer.score += SCORE_BOT;
+  }
+  sfx('down', 0.4 + volAt(r.x, r.z) * 0.6);
+  rebuildTargets();
+  if (r.conn) netSend(r.conn, { t: 'downed', by: sourceName, ms: RESPAWN_MS });
+  updateHud();
+}
+
+// --- Lobby ---
+function roomCode() {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+}
+function refreshLobby() {
+  $('lobbyList').innerHTML = NET.names.map((n, i) =>
+    `<div><b style="color:${PLAYER_TAG_COLORS[i % 4]}">${i + 1}. ${n}</b>${i === 0 ? ' 👑' : ''}</div>`).join('') +
+    Array.from({ length: Math.max(0, 4 - NET.names.length) }, (_, i) =>
+      `<div style="opacity:.55">${NET.names.length + i + 1}. 🤖 bot</div>`).join('');
+  if (NET.mode === 'host') {
+    const ready = NET.names.length >= 2;
+    $('launchBtn').disabled = !ready;
+    $('lobbyHint').textContent = ready
+      ? 'Prêt ! Les places vides seront des bots.'
+      : "En attente d'au moins un autre joueur… (le lien est copiable ci-dessus)";
+  }
+}
+function startHosting() {
+  if (NET.peer) return;
+  NET.mode = 'host';
+  NET.names = [myName()];
+  const code = roomCode();
+  NET.peer = new Peer('bftc-' + code);
+  $('titleScreen').style.display = 'none';
+  $('lobby').style.display = 'flex';
+  $('launchBtn').style.display = '';
+  NET.peer.on('open', () => {
+    $('roomLink').value = location.origin + location.pathname + '?room=' + code;
+    refreshLobby();
+  });
+  NET.peer.on('connection', (conn) => {
+    if (G.started || NET.names.length >= 4) { setTimeout(() => conn.close(), 500); return; }
+    conn.on('data', (d) => onHostData(conn, d));
+    conn.on('close', () => onGuestLeft(conn));
+  });
+  NET.peer.on('error', (e) => { $('lobbyHint').textContent = 'Erreur réseau : ' + e.type; });
+}
+function joinRoom() {
+  if (NET.peer) return;
+  NET.mode = 'guest';
+  NET.peer = new Peer();
+  $('titleScreen').style.display = 'none';
+  $('lobby').style.display = 'flex';
+  $('roomLink').value = location.href;
+  $('lobbyHint').textContent = 'Connexion à la salle…';
+  NET.peer.on('open', () => {
+    NET.conn = NET.peer.connect('bftc-' + urlRoom, { reliable: true });
+    NET.conn.on('open', () => {
+      netSend(NET.conn, { t: 'hello', name: myName() });
+      $('lobbyHint').textContent = "Connecté ! En attente du lancement par l'hôte…";
+    });
+    NET.conn.on('data', onGuestData);
+    NET.conn.on('close', hostLost);
+  });
+  NET.peer.on('error', (e) => { $('lobbyHint').textContent = 'Connexion impossible (' + e.type + ') — vérifie le lien.'; });
+}
+function hostLost() {
+  if (G.gameOver) return;
+  if (!G.started) { $('lobbyHint').textContent = "L'hôte est parti. Recharge la page."; return; }
+  endGame(false, "L'HÔTE EST PARTI…", 'La partie en ligne est terminée.');
+}
+function onGuestLeft(conn) {
+  const r = NET.remotes.find(r => r.conn === conn);
+  if (!G.started) {
+    const i = NET.names.indexOf(conn._name);
+    if (i > 0) NET.names.splice(i, 1);
+    refreshLobby();
+    netBroadcast({ t: 'lobby', names: NET.names });
+    return;
+  }
+  if (r) {   // en partie : il reste au sol définitivement
+    r.down = true;
+    r.downUntil = G.now + 99999999;
+    r.name += ' (parti)';
+    rebuildTargets();
+    updateHud();
+  }
+}
+
+// --- Protocole côté hôte ---
+function onHostData(conn, d) {
+  const r = NET.remotes.find(r => r.conn === conn);
+  switch (d.t) {
+    case 'hello':
+      conn._name = d.name;
+      conn._slot = NET.names.length;
+      NET.names.push(d.name);
+      refreshLobby();
+      netBroadcast({ t: 'lobby', names: NET.names });
+      // (les invités pas encore dans remotes avant le start : broadcast direct)
+      for (const c2 of hostConns()) netSend(c2, { t: 'lobby', names: NET.names });
+      break;
+    case 'p':
+      if (r && !r.down) {
+        r.tx = d.x; r.ty = d.y; r.tz = d.z; r.yaw = d.yaw; r.weapon = d.w;
+      }
+      break;
+    case 'fx': relayFx(conn, d); break;
+    case 'hitN': {
+      const n = G.npcs[d.i];
+      if (n && !n.dead && r && !r.down) hitNpcBy(n, Math.min(d.dmg, 95), r);
+      break;
+    }
+    case 'hitB': {
+      const b = G.bots[d.i];
+      if (b && !b.down && r && !r.down) damageBot(b, Math.min(d.dmg, 95), false, r);
+      break;
+    }
+    case 'hitP': {
+      if (!r || r.down) break;
+      if (d.slot === 0) damagePlayer(Math.min(d.dmg, 95), r.name.toUpperCase(), r);
+      else damageRemote(NET.remotes.find(x => x.slot === d.slot), Math.min(d.dmg, 95), r, r.name.toUpperCase());
+      break;
+    }
+    case 'hitSelf': if (r) damageRemote(r, Math.min(d.dmg, 95), null, 'SA PROPRE ROQUETTE'); break;
+    case 'heal': if (r && !r.down) r.hp = Math.min(PLAYER_MAX_HP, r.hp + MEDKIT_HEAL); break;
+    case 'take': hostTakeLoot(d.id); break;
+    case 'tie': {
+      const n = G.npcs[d.i];
+      if (n && !n.dead) {
+        n.held = !!d.on;
+        if (d.on) { n.vx = n.vz = 0; n.nextThink = G.now + 999999; }
+        else n.nextThink = G.now;
+      }
+      break;
+    }
+    case 'accuse': {
+      const n = G.npcs[d.i];
+      if (!r || !n || n.dead || !G.finalPhase) break;
+      if (n.isCulprit) {
+        r.score += SCORE_CULPRIT;
+        endGameNet(r.slot, `${r.name.toUpperCase()} A CAPTURÉ LE COUPABLE !`,
+          'Le voleur de cookie est ligoté, VIVANT.');
+      } else {
+        r.score += SCORE_WRONG_TIE;
+        n.held = false;
+        const ang = Math.atan2(n.z - r.z, n.x - r.x);
+        n.vx = Math.cos(ang) * NPC_FLEE_MAX;
+        n.vz = Math.sin(ang) * NPC_FLEE_MAX;
+        n.nextThink = G.now + 2500;
+        netSend(conn, { t: 'verdict', ok: false });
+        updateHud();
+      }
+      break;
+    }
+  }
+}
+function hostConns() {
+  const set = [];
+  if (NET.peer) for (const id in NET.peer.connections) {
+    for (const c of NET.peer.connections[id]) if (c.open) set.push(c);
+  }
+  return set;
+}
+function relayFx(fromConn, d) {
+  playFx(d);
+  for (const r of NET.remotes) if (r.conn && r.conn !== fromConn) netSend(r.conn, d);
+}
+function playFx(d) {
+  if (d.k === 'shot') {
+    spawnTracer(new THREE.Vector3(...d.f), new THREE.Vector3(...d.o));
+    sfx(d.s || 'rifle', volAt(d.f[0], d.f[2]) * 0.8);
+  } else if (d.k === 'boom') {
+    explodeFxOnly(d.x, d.y, d.z);
+  }
+}
+// Un tir de PNJ arbitré pour un invité précis (scoring pour LUI)
+function hitNpcBy(npc, dmg, killer) {
+  if (G.gameOver) return;
+  npc.hp -= dmg;
+  npc.lastHitAngle = Math.atan2(npc.z - killer.x, npc.x - killer.x);
+  bloodSplat(npc.x, npc.z, npc.lastHitAngle);
+  npc.flashUntil = performance.now() + 60;
+  for (const m of npc.meshes) m.material = flashMat;
+  if (npc.hp > 0) return;
+  if (npc.isCulprit) { culpritDown(npc, killer); return; }
+  killer.score += isExcluded(npc) ? currentGood() : currentMalus();
+  killer.kills++;
+  killNpcVisual(npc);
+  updateHud();
+}
+function endGameNet(winSlot, title, text) {
+  G.netWinSlot = winSlot;
+  endGame(winSlot === 0, title, text);
+}
+function hostTakeLoot(id) {
+  const i = G.loot.findIndex(l => l.id === id);
+  if (i < 0) return;
+  scene.remove(G.loot[i].group);
+  G.loot.splice(i, 1);
+  netBroadcast({ t: 'lootRm', id });
+}
+function buildSnapshot() {
+  const n = new Array(G.npcs.length * 2);
+  for (let i = 0; i < G.npcs.length; i++) {
+    n[i * 2] = Math.round(G.npcs[i].x * 10);
+    n[i * 2 + 1] = Math.round(G.npcs[i].z * 10);
+  }
+  return {
+    t: 's',
+    n,
+    b: G.bots.map(b => [Math.round(b.x * 10), Math.round(b.z * 10), Math.round(b.aim * 100),
+      b.down ? 1 : 0, Math.round(b.hp), b.score, b.weapon]),
+    p: [{ s: 0, x: player.x, y: player.y, z: player.z, yaw: player.yaw,
+          hp: Math.round(player.hp), down: player.down, score: G.score, k: G.kills },
+      ...NET.remotes.map(r => ({ s: r.slot, x: r.x, y: r.y, z: r.z, yaw: r.yaw,
+        hp: Math.round(r.hp), down: r.down, score: r.score, k: r.kills }))],
+    z: [Math.round(G.zoneR * 10) / 10, G.zonePhase],
+    alive: G.npcAlive,
+    fin: G.finalPhase,
+    rem: Math.max(0, Math.round((G.finalPhase ? G.finalEndAt : G.nextClueAt) - G.now))
+  };
+}
+
+// --- Protocole côté invité ---
+function onGuestData(d) {
+  switch (d.t) {
+    case 'lobby': NET.names = d.names; refreshLobby(); break;
+    case 'start':
+      NET.pendingStart = d;
+      guestBuildWorld(d);
+      $('lobbyHint').textContent = 'La partie commence !';
+      $('goBtn').style.display = '';
+      break;
+    case 's': applySnapshot(d); break;
+    case 'clue':
+      G.revealedClues.push(d.c);
+      sfx('clue');
+      showBanner('NOUVEL INDICE !', CLUE_TEXTS[d.c.axis](d.c.value), 5000);
+      refreshCluesList();
+      updateHud();
+      if (d.fin) {
+        G.finalPhase = true;
+        setTimeout(() => {
+          if (!G.gameOver) showBanner('PHASE FINALE !',
+            'Arme ton FOUET (E), attrape le coupable au lash et maintiens le clic 10 s !', 7000);
+        }, 5600);
+      }
+      break;
+    case 'banner': showBanner(d.a, d.b, d.ms || 4000); break;
+    case 'npcDead': {
+      const n = G.npcs[d.i];
+      if (n && !n.dead) {
+        n.lastHitAngle = d.a;
+        guestKillNpc(n);
+      }
+      break;
+    }
+    case 'fx': playFx(d); break;
+    case 'lootRm': {
+      const i = G.loot.findIndex(l => l.id === d.id);
+      if (i >= 0) { scene.remove(G.loot[i].group); G.loot.splice(i, 1); }
+      break;
+    }
+    case 'lootAdd': spawnPickup(d.l.type, d.l.x, d.l.z, d.l.ammo, d.l.y || 0, d.l.id); break;
+    case 'downed': guestDowned(d); break;
+    case 'respawn':
+      player.down = false;
+      player.hp = PLAYER_MAX_HP;
+      player.x = d.x; player.z = d.z; player.y = 0; player.vy = 0;
+      player.vx = player.vz = 0;
+      downOverlay.style.display = 'none';
+      updateHpBar();
+      break;
+    case 'verdict':
+      if (!d.ok) {
+        cancelTie();
+        errorFlash();
+        sfx('wrong');
+        showBanner('MAUVAIS SUSPECT !', `${SCORE_WRONG_TIE} points. Il s'enfuit, furieux.`, 3000);
+        G.whipCdUntil = G.now + WHIP_FAIL_CD;
+      }
+      break;
+    case 'end': {
+      G.netWinSlot = d.winSlot;
+      endGame(d.winSlot === NET.slot, d.title, d.text, d.st);
+      break;
+    }
+  }
+}
+function guestKillNpc(npc) {   // mort annoncée par l'hôte : visuel seulement
+  npc.dead = true;
+  npc.vx = npc.vz = 0;
+  G.npcAlive--;
+  sfx('pop', 0.3 + volAt(npc.x, npc.z) * 0.7);
+  if (G.tying && G.tying.npc === npc) cancelTie();
+  rebuildTargets();
+  const a = npc.lastHitAngle ?? 0;
+  bloodPool(npc.x, npc.z, a);
+  deathPuffs(npc.x, npc.z);
+  dying.push({ npc, start: performance.now(), yaw: Math.atan2(Math.cos(a), Math.sin(a)) });
+  updateHud();
+}
+function guestDowned(d) {
+  player.down = true;
+  player.downUntil = G.now + (d.ms || RESPAWN_MS);
+  player.hp = 0;
+  player.sliding = false;
+  G.mouseHeld = false;
+  G.adsHeld = false;
+  cancelTie();
+  cancelHeal();
+  cancelReload();
+  // on repart au pistolet (pas de drop de caisses côté invité en v0)
+  for (const t of ['rifle', 'shotgun', 'rocket', 'sniper']) {
+    G.weapons[t].owned = false; G.weapons[t].ammo = 0; G.weapons[t].mag = 0;
+  }
+  G.medkits = 0;
+  G.currentWeapon = 'pistol';
+  G.whipArmed = false;
+  G.weapons.pistol.mag = WEAPONS.pistol.mag;
+  buildViewmodel('pistol');
+  updateHotbar();
+  sfx('down');
+  downOverlay.querySelector('.d1').textContent = `ÉLIMINÉ PAR ${d.by} ! (${SCORE_DEATH})`;
+  downOverlay.style.display = 'flex';
+  updateHpBar();
+}
+function applySnapshot(d) {
+  NET.lastP = d.p;
+  for (let i = 0; i < G.npcs.length; i++) {
+    const n = G.npcs[i];
+    if (n.dead) continue;
+    n.tx = d.n[i * 2] / 10;
+    n.tz = d.n[i * 2 + 1] / 10;
+  }
+  d.b.forEach((bd, i) => {
+    const b = G.bots[i];
+    if (!b) return;
+    b.tx = bd[0] / 10; b.tz = bd[1] / 10;
+    b.aim = bd[2] / 100;
+    b.hp = bd[4]; b.score = bd[5]; b.weapon = bd[6];
+    const wasDown = b.down;
+    b.down = !!bd[3];
+    if (b.down !== wasDown) guestBotDownVisual(b);
+  });
+  for (const pd of d.p) {
+    if (pd.s === NET.slot) {
+      if (!player.down) player.hp = pd.hp;
+      G.score = pd.score;
+      G.kills = pd.k;
+      updateHpBar();
+    } else {
+      const r = NET.remotes.find(r => r.slot === pd.s);
+      if (r) {
+        r.tx = pd.x; r.ty = pd.y; r.tz = pd.z; r.yaw = pd.yaw;
+        r.hp = pd.hp; r.score = pd.score;
+        if (r.down !== pd.down) { r.down = pd.down; rebuildTargets(); }
+      }
+    }
+  }
+  G.zoneR = d.z[0];
+  G.zonePhase = d.z[1];
+  G.npcAlive = d.alive;
+  G.finalPhase = d.fin;
+  NET.remain = d.rem;
+  if (!applySnapshot._n) applySnapshot._n = 0;
+  if (++applySnapshot._n % 5 === 0) updateHud();
+}
+function guestBotDownVisual(b) {
+  if (b.down) {
+    b.group.rotation.x = -Math.PI / 2;
+    b.group.position.y = 0.25;
+    for (const m of b.meshes) m.material = getGrayMat(m.userData.hex);
+  } else {
+    b.group.rotation.x = 0;
+    b.group.position.y = 0;
+    for (const m of b.meshes) m.material = getMat(m.userData.hex);
+  }
+  rebuildTargets();
+}
+function guestLerpWorld(dt) {
+  const k = Math.min(1, 10 * dt);
+  for (const n of G.npcs) {
+    if (n.dead || n.tx === undefined) continue;
+    const dx = n.tx - n.x, dz = n.tz - n.z;
+    n.x += dx * k;
+    n.z += dz * k;
+    const moving = Math.hypot(dx, dz) > 0.05;
+    if (moving) {
+      n.walkPhase += dt * 9;
+      n.armL.rotation.x = Math.sin(n.walkPhase) * 0.55;
+      n.armR.rotation.x = -Math.sin(n.walkPhase) * 0.55;
+      const ty = Math.atan2(dx, dz);
+      let dy = ty - n.group.rotation.y;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      n.group.rotation.y += dy * Math.min(1, 8 * dt);
+    }
+    n.group.position.set(n.x, moving ? Math.abs(Math.sin(n.walkPhase)) * 0.06 : 0, n.z);
+  }
+  for (const b of G.bots) {
+    if (b.tx === undefined) continue;
+    b.x += (b.tx - b.x) * k;
+    b.z += (b.tz - b.z) * k;
+    if (!b.down) {
+      const moving = Math.hypot(b.tx - b.x, b.tz - b.z) > 0.05;
+      if (moving) b.walkPhase += dt * 9;
+      b.group.position.set(b.x, moving ? Math.abs(Math.sin(b.walkPhase)) * 0.06 : 0, b.z);
+      const targetYaw = Math.atan2(Math.cos(b.aim), Math.sin(b.aim));
+      let dy = targetYaw - b.group.rotation.y;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      b.group.rotation.y += dy * Math.min(1, 8 * dt);
+      b.armR.rotation.x = -1.25;
+    } else {
+      b.group.position.x = b.x;
+      b.group.position.z = b.z;
+    }
+  }
+  // zone : visuel + vignette (les dégâts viennent de l'hôte)
+  zoneWall.scale.set(G.zoneR, 1, G.zoneR);
+  zoneVig.style.opacity = (!player.down && Math.hypot(player.x, player.z) > G.zoneR)
+    ? 0.5 + 0.3 * Math.sin(G.now / 150) : 0;
+}
+function guestBuildWorld(d) {
+  NET.slot = d.slot;
+  NET.names = d.names;
+  G.started = true;
+  for (let i = 0; i < d.npcs.length; i++) {
+    const nd = d.npcs[i];
+    const npc = spawnNpc(nd.a, nd.x, nd.z);
+    npc.idx = i;
+    G.npcs.push(npc);
+  }
+  for (const l of d.loot) spawnPickup(l.type, l.x, l.z, l.ammo, l.y || 0, l.id);
+  for (let i = 0; i < d.bots; i++) spawnBot(BOT_DEFS[i], d.names.length + i);
+  for (const p of d.players) if (p.slot !== NET.slot) addRemote(p.slot, p.name);
+  player.x = d.spawn.x;
+  player.z = d.spawn.z;
+  player.yaw = Math.atan2(-player.x, -player.z);
+  rebuildTargets();
+  updateHud();
+  updateHotbar();
+}
+// Explosion visuelle seule (les dégâts sont arbitrés ailleurs)
+function explodeFxOnly(x, y, z) {
+  sfx('explosion', 0.3 + volAt(x, z) * 0.7);
+  const sMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false }));
+  sMesh.position.set(x, Math.max(0.6, y), z);
+  scene.add(sMesh);
+  explosions.push({ mesh: sMesh, born: performance.now() });
+  shake(Math.max(0.004, 0.02 * (1 - Math.min(1, Math.hypot(player.x - x, player.z - z) / 25))));
+}
+
+// --- Boutons ---
+$('hostBtn').addEventListener('click', startHosting);
+$('joinBtn').addEventListener('click', joinRoom);
+if (urlRoom) {
+  $('joinBtn').style.display = '';
+  $('hostBtn').style.display = 'none';
+  $('startBtn').textContent = 'JOUER SOLO QUAND MÊME';
+}
+$('copyBtn').addEventListener('click', () => {
+  $('roomLink').select();
+  try { navigator.clipboard.writeText($('roomLink').value); } catch (e) { document.execCommand('copy'); }
+  $('copyBtn').textContent = 'COPIÉ !';
+  setTimeout(() => { $('copyBtn').textContent = 'COPIER'; }, 1500);
+});
+$('launchBtn').addEventListener('click', () => {
+  if (NET.names.length < 2 || G.started) return;
+  getAudioCtx();
+  $('lobby').style.display = 'none';
+  startGame();
+  lockPointer();
+});
+$('goBtn').addEventListener('click', () => {
+  getAudioCtx();
+  $('lobby').style.display = 'none';
+  hud.style.display = 'block';
+  lockPointer();
+});
+
 // Hook de debug/test (piloter le jeu sans pointer lock, ex. tests headless)
 window.__G = G;
 window.__player = player;
@@ -3339,17 +4099,33 @@ function animate() {
   let dt = Math.min(0.05, (wallNow - lastT) / 1000);
   lastT = wallNow;
 
-  const running = G.started && G.locked && !G.gameOver;
+  const running = G.started && !G.gameOver && (G.locked || NET.mode !== 'solo');
   if (running) {
     G.now += dt * 1000;
 
     updatePlayer(dt);
-    updateNpcs(dt);
-    updateZone(dt);
+    if (NET.mode === 'guest') {
+      guestLerpWorld(dt);   // le monde vient des snapshots de l'hôte
+    } else {
+      updateNpcs(dt);
+      updateZone(dt);
+    }
+    if (NET.mode !== 'solo') {
+      updateRemotes(dt);
+      if (NET.mode === 'guest' && NET.conn && G.now - NET.lastStateSent > 50) {
+        NET.lastStateSent = G.now;
+        netSend(NET.conn, { t: 'p', x: +player.x.toFixed(2), y: +player.y.toFixed(2),
+          z: +player.z.toFixed(2), yaw: +player.yaw.toFixed(2), w: G.currentWeapon });
+      }
+      if (NET.mode === 'host' && G.now - NET.lastSnapSent > 66) {
+        NET.lastSnapSent = G.now;
+        netBroadcast(buildSnapshot());
+      }
+    }
 
     if (player.down) {
-      downCount.textContent = Math.ceil((player.downUntil - G.now) / 1000);
-      if (G.now >= player.downUntil) respawnPlayer();
+      downCount.textContent = Math.max(0, Math.ceil((player.downUntil - G.now) / 1000));
+      if (NET.mode !== 'guest' && G.now >= player.downUntil) respawnPlayer();
     }
 
     if (G.mouseHeld) shoot();
@@ -3357,7 +4133,7 @@ function animate() {
     updateHeal();
     updateLoot(dt);
     updateRockets(dt);
-    updateBots(dt);
+    if (NET.mode !== 'guest') updateBots(dt);
     // Feuilles qui tombent doucement près des arbres
     if (Math.random() < dt * 2.2 && treeSpots.length) {
       const t = treeSpots[Math.floor(Math.random() * treeSpots.length)];
@@ -3368,13 +4144,15 @@ function animate() {
           leafMat, 0.09, false, 0.35, 6000);
       }
     }
-    updateBotBullets(dt);
+    if (NET.mode !== 'guest') updateBotBullets(dt);
     drawBotTags();
 
-    // Cadence des manches (pattern 2D : now >= nextClueAt → startRound)
-    if (!G.finalPhase && G.now >= G.nextClueAt) startRound();
-    if (G.finalPhase && G.now >= G.finalEndAt && !G.gameOver) {
-      endGame(false, 'LE COUPABLE S\'EST ENFUI…', 'Le temps est écoulé. Quelque part, quelqu\'un croque TON cookie.');
+    // Cadence des manches (l'hôte seul fait tourner l'horloge de partie)
+    if (NET.mode !== 'guest') {
+      if (!G.finalPhase && G.now >= G.nextClueAt) startRound();
+      if (G.finalPhase && G.now >= G.finalEndAt && !G.gameOver) {
+        endGame(false, 'LE COUPABLE S\'EST ENFUI…', 'Le temps est écoulé. Quelque part, quelqu\'un croque TON cookie.');
+      }
     }
 
     // Prompt du fouet (phase finale)
